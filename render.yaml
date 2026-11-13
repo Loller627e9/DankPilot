@@ -1,0 +1,25 @@
+# Render Blueprint. Deploy with: New + > Blueprint > point at this repo.
+# Creates one free Web Service. The keep-alive server in index.js answers on
+# PORT and self-pings SELF_URL so the free instance does not idle-sleep.
+services:
+  - type: web
+    name: dank-farm-bot
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: BOT_TOKEN
+        sync: false          # set in the dashboard; never commit a real token
+      - key: OWNER_ID
+        sync: false
+      - key: KEEP_ALIVE
+        value: "true"
+      # RENDER_EXTERNAL_URL is injected by Render automatically and is used
+      # for the self-ping, so no SELF_URL is needed here.
+      - key: COMMAND_INTERVAL
+        value: "3000"
+      - key: CYCLE_INTERVAL
+        value: "45000"

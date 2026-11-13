@@ -1,0 +1,7 @@
+node_modules
+.git
+.env
+config.json
+storage/*.json
+sent_commands.log
+*.log

@@ -1,0 +1,29 @@
+{
+  "name": "dank-farm-bot",
+  "version": "2.0.0",
+  "description": "Discord admin bot that farms Dank Memer across multiple accounts, with a custom-emoji UI.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node index.js",
+    "upload-emojis": "node upload-emojis.js",
+    "check": "node -c index.js && node -c config.js && node -c store.js && node -c keepalive.js && node -c grinder.js && node -c handlers.js && node -c ui.js && node -c emojis.js && node -c upload-emojis.js",
+    "test": "node test/run.js && node test/keepalive.js"
+  },
+  "keywords": [
+    "discord",
+    "bot",
+    "dank",
+    "memer",
+    "render"
+  ],
+  "author": "OpenHands",
+  "license": "MIT",
+  "dependencies": {
+    "discord.js": "^14.21.0",
+    "discord.js-selfbot-v13": "^3.7.0"
+  }
+}
