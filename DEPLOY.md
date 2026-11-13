@@ -51,18 +51,15 @@ after a deploy) but it means farming accounts and stats reset.
 For durable data, add a Render **Disk** mounted at `/data` and set
 `DATA_DIR=/data`. (Disks require a paid instance type.)
 
-## 6. Upload the custom emojis (one time)
+## 6. Custom emojis
 
-Locally, with the bot token available:
+The bot **uploads the bundled emojis automatically on startup**, so a fresh
+deploy restores the custom set even though the free tier has no shell. Watch for
+`🎨 Uploaded N custom emoji(s)` in the logs.
 
-```bash
-npm run upload-emojis
-```
-
-This uploads `./emojis/*` as application emojis and writes `storage/emojis.json`.
-On a free instance re-run it (or commit `storage/emojis.json`) after each deploy.
-Until the custom set exists the embeds fall back to unicode emojis, so nothing
-breaks. `$emojis-reload` re-reads the file without a restart.
+You can also do it manually with `npm run upload-emojis`. Until the upload
+succeeds the embeds fall back to unicode emojis, so nothing breaks.
+`$emojis-reload` re-reads the set without a restart.
 
 ## Notes
 
