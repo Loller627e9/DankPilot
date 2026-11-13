@@ -37,8 +37,10 @@ async function initializeBot() {
 
     client.once('ready', async () => {
         console.log(`✅ Logged in as ${client.user.tag}`);
+        console.log(`🆔 Bot application ID: ${client.user.id}`);
         console.log(`🔧 Owner ID: ${config.ownerId}`);
         console.log(`📝 Prefix: ${handlers.PREFIX}`);
+        console.log(`🏠 In ${client.guilds.cache.size} server(s): ${client.guilds.cache.map(g => g.name).join(', ') || '(none — invite the bot!)'}`);
         client.user.setActivity('the Dank Farm', { type: 3 }); // 3 = WATCHING
 
         // Upload any missing custom emojis. A fresh Render deploy has an empty
@@ -59,8 +61,14 @@ async function initializeBot() {
     });
 
     client.on('messageCreate', async message => {
+        // Diagnostic: proves whether the bot can even see your message.
+        console.log(`📨 msg from ${message.author.tag} (${message.author.id}) in ${message.guild ? `#${message.channel.name} @ ${message.guild.name}` : 'DM'}: ${JSON.stringify(message.content)}`);
+
         if (message.author.bot) return;
-        if (!message.content.startsWith(handlers.PREFIX)) return;
+        if (!message.content.startsWith(handlers.PREFIX)) {
+            console.log(`   ↳ ignored: does not start with prefix "${handlers.PREFIX}"`);
+            return;
+        }
         try {
             await handlers.handleCommand(message);
         } catch (err) {
