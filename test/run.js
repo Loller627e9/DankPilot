@@ -18,9 +18,13 @@ fs.rmSync(DATA, { recursive: true, force: true });
 require('../store').initStorage();
 
 let passed = 0;
+const pending = [];
 function test(name, fn) {
-    try { fn(); console.log(`  ok  ${name}`); passed++; }
-    catch (err) { console.error(`FAIL  ${name}: ${err.message}`); process.exitCode = 1; }
+    try {
+        const out = fn();
+        if (out && typeof out.then === 'function') { pending.push([name, out]); return; }
+        console.log(`  ok  ${name}`); passed++;
+    } catch (err) { console.error(`FAIL  ${name}: ${err.message}`); process.exitCode = 1; }
 }
 
 test('helpPayload builds an embed + banner', () => {
@@ -99,5 +103,22 @@ test('parseCoins reads wallet and bank', () => {
     assert.deepStrictEqual(grinder.parseCoins('<:Coin:1> 1,234 <:Bank:2> 5,678'), { wallet: 1234, bank: 5678 });
 });
 
-console.log(`\n${passed} test(s) passed`);
-fs.rmSync(DATA, { recursive: true, force: true });
+test('emoji sync is a no-op without a token (never throws)', async () => {
+    const saved = process.env.BOT_TOKEN;
+    process.env.BOT_TOKEN = '';
+    delete require.cache[require.resolve('../config')];
+    delete require.cache[require.resolve('../upload-emojis')];
+    const sync = require('../upload-emojis').sync;
+    const result = await sync({ log: () => {} });
+    assert.strictEqual(result.uploaded, 0);
+    process.env.BOT_TOKEN = saved;
+});
+
+(async () => {
+    for (const [name, promise] of pending) {
+        try { await promise; console.log(`  ok  ${name}`); passed++; }
+        catch (err) { console.error(`FAIL  ${name}: ${err.message}`); process.exitCode = 1; }
+    }
+    console.log(`\n${passed} test(s) passed`);
+    fs.rmSync(DATA, { recursive: true, force: true });
+})();

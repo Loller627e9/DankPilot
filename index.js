@@ -4,6 +4,7 @@ const store = require('./store');
 const grinder = require('./grinder');
 const handlers = require('./handlers');
 const keepAlive = require('./keepalive');
+const emojiSync = require('./upload-emojis');
 
 process.on('unhandledRejection', reason => {
     console.error('Unhandled Rejection:', reason);
@@ -39,6 +40,15 @@ async function initializeBot() {
         console.log(`🔧 Owner ID: ${config.ownerId}`);
         console.log(`📝 Prefix: ${handlers.PREFIX}`);
         client.user.setActivity('the Dank Farm', { type: 3 }); // 3 = WATCHING
+
+        // Upload any missing custom emojis. A fresh Render deploy has an empty
+        // storage dir and no shell, so this restores the custom set on boot.
+        try {
+            const { uploaded, total } = await emojiSync.sync();
+            if (uploaded) console.log(`🎨 Uploaded ${uploaded} custom emoji(s) (${total} total)`);
+        } catch (err) {
+            console.error('Emoji sync failed (continuing with unicode):', err.message);
+        }
 
         try {
             const started = await grinder.startAllClients();

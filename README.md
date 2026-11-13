@@ -1,185 +1,114 @@
-<h1 align="center">⚡ DankPilot</h1>
-<h3 align="center">🤖 Multi-Account Automation Engine for Dank Memer</h3><p align="center">
-  <img src="https://readme-typing-svg.herokuapp.com?color=00F7FF&center=true&vCenter=true&lines=Automate+Grinding;Multi+Account+Control;Efficient+Bot+Engine;Built+for+Power+Users" />
-</p><p align="center">
-  <img src="https://img.shields.io/badge/Node.js-18+-green?style=for-the-badge&logo=node.js" />
-  <img src="https://img.shields.io/badge/discord.js-v14-blue?style=for-the-badge&logo=discord" />
-  <img src="https://img.shields.io/badge/status-active-success?style=for-the-badge" />
-  <img src="https://img.shields.io/badge/license-MIT-purple?style=for-the-badge" />
-</p>---
+# 🚜 Dank Farm Bot
 
-⚠️ Disclaimer
+A Discord **admin bot** (discord.js v14) that drives a fleet of Dank Memer
+farming accounts through `discord.js-selfbot-v13`, with a polished embed UI,
+custom animated emojis, and one-command deploy to Render.
 
-🚫 This project uses selfbot automation
-💀 Violates Discord Terms of Service
-⚡ Accounts may get banned
+## ✨ Features
 
-«Use strictly for educational purposes»
+- **Multi-account farming** — automate `pls beg/hunt/dig/bal` across many tokens
+- **Live dashboard** — coins, animals, items, commands and failures per account
+- **Custom emoji UI** — bundled animated emojis + banner art, with a unicode
+  fallback so nothing ever renders broken
+- **Access control** — owner plus a grantable allow-list
+- **Safe storage** — atomic JSON writes, per-file write queue, token masking
+- **Keep-alive server** — `/health` endpoint + self-ping so a Render free
+  Web Service does not idle-sleep
+- **Env-first config** — `BOT_TOKEN` / `OWNER_ID` from environment variables,
+  with `config.json` as a local fallback
 
----
+## 📦 Quick start (local)
 
-✨ Features
-
-🚀 Multi-Account System
-Run multiple accounts simultaneously with ease
-
-⚡ Automated Grinding Engine
-Executes Dank Memer commands in optimized cycles
-
-📊 Real-Time Statistics
-
-- 💰 Coins (wallet + bank)
-- 🐾 Animals
-- 📦 Items
-- ❌ Failures
-
-🎮 Discord-Based Control Panel
-Manage everything using commands—no terminal needed
-
-🔐 Secure Access System
-Owner + authorized users only
-
-💾 Persistent Data Storage
-Keeps all stats and tokens saved locally
-
-📜 Command Logging
-Tracks every action performed
-
----
-
-🧠 How It Works
-
-flowchart TD
-A[Admin Bot] --> B[Load Tokens]
-B --> C[Create Selfbot Clients]
-C --> D[Execute Commands]
-D --> E[Parse Responses]
-E --> F[Update Stats]
-F --> D
-
----
-
-📦 Installation
-
-git clone https://github.com/Loller627e9/DankPilot.git
-cd DankPilot
+```bash
 npm install
-
----
-
-⚙️ Configuration
-
-Create a ".env" file:
-
-BOT_TOKEN=your_bot_token
-OWNER_ID=your_user_id
-
----
-
-▶️ Run
-
+cp .env.example .env      # then fill in BOT_TOKEN and OWNER_ID
 npm start
+```
 
----
+Prefer a file? Create `config.json`:
 
-🤖 Commands
+```json
+{ "botToken": "YOUR_BOT_TOKEN", "ownerId": "YOUR_USER_ID" }
+```
 
-💡 Prefix: "$"
+Run the checks and smoke tests:
 
-🔑 Token Management
+```bash
+npm run check   # syntax-check every file
+npm test        # dependency-free behaviour tests
+```
 
-$add-token <TOKEN> <CHANNEL_ID>
-$remove-token <INDEX>
+## 🎨 Custom emojis and art
 
-⚙️ Control
+`assets/` holds the embed banners. `emojis/` holds the animated emojis.
 
-$start-all
-$stop-all
-$toggle <INDEX>
+```bash
+npm run upload-emojis   # manual: uploads emojis/ as application emojis
+```
 
-📊 Stats
+The bot also **auto-uploads any missing emojis on startup**, so a fresh Render
+deploy restores the custom set with no shell needed. Until the upload succeeds
+the bot uses unicode emojis, so it always works. `$emojis-reload` re-reads the
+file at runtime.
 
-$stats
+## 🤖 Commands
 
-🔐 Access Control
+| Command | What it does |
+| --- | --- |
+| `$help` | Command center embed |
+| `$stats` | Farm dashboard with per-account totals |
+| `$ping` | Latency and uptime |
+| `$add-token <token> <channelId>` | Register and log in a farming account |
+| `$remove-token <index>` | Remove an account |
+| `$toggle <index>` | Start/stop one account |
+| `$start-all` / `$stop-all` | Start/stop every active account |
+| `$grant <@user>` / `$revoke <@user>` | Manage the allow-list |
+| `$reset-stats` | Clear all statistics |
+| `$export-stats` | Write a timestamped stats file |
+| `$emojis-reload` | Reload the custom emoji set |
 
-$add-user <USER_ID>
-$remove-user <USER_ID>
+## ⚙️ Configuration
 
----
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `BOT_TOKEN` | — | Discord **bot** token (required) |
+| `OWNER_ID` | — | Your Discord user ID (required) |
+| `COMMAND_PREFIX` | `$` | Command prefix |
+| `DATA_DIR` | `storage` | Where the JSON files live |
+| `COMMAND_INTERVAL` | `3000` | ms between farming commands |
+| `CYCLE_INTERVAL` | `45000` | ms between farming cycles |
+| `KEEP_ALIVE` | `true` | Run the health server + self-ping |
+| `PORT` | `3000` | Health server port |
+| `SELF_URL` | `RENDER_EXTERNAL_URL` | URL the self-ping targets |
+| `SELF_PING_MS` | `600000` | Self-ping interval |
 
-📁 Project Structure
+## 📁 Structure
 
-DankPilot/
-├── index.js
-├── handlers.js
-├── grinder.js
-├── package.json
-├── README.md
-├── LICENSE
-├── .gitignore
-├── .env.example
-├── storage/        (ignored)
-└── sent_commands.log (ignored)
+```
+.
+├── index.js            # entry point: Discord client + lifecycle
+├── config.js           # env-first configuration
+├── store.js            # atomic JSON persistence
+├── keepalive.js        # health server + self-ping
+├── grinder.js          # selfbot farming logic
+├── handlers.js         # admin command handlers
+├── ui.js               # embed builders
+├── emojis.js           # custom emoji lookup + fallback
+├── upload-emojis.js    # one-time emoji uploader
+├── assets/             # embed banners
+├── emojis/             # animated emoji images
+├── storage/            # tokens.json, stats.json, access.json, emojis.json
+└── test/               # dependency-free tests
+```
 
----
+## 🌐 Deploy on Render
 
-🔐 Security
+See [DEPLOY.md](DEPLOY.md). In short: push the repo, create a **Web Service**
+(or apply `render.yaml`), set `BOT_TOKEN` and `OWNER_ID`, and let the built-in
+keep-alive server hold the free instance open.
 
-❗ Never upload:
+## ⚠️ Disclaimer
 
-- ".env"
-- "config.json"
-- "tokens.json"
-
-✔ Always regenerate tokens if exposed
-✔ Keep sensitive data local only
-
----
-
-🛑 Risks
-
-⚠️ Discord account bans
-⚠️ Rate limiting
-⚠️ Token invalidation
-
----
-
-🔥 Future Plans
-
-- 🌐 Web dashboard
-- 📊 Advanced analytics
-- 🗄 Database integration
-- 🛡 Proxy support
-- ⚙️ Plugin system
-
----
-
-👨‍💻 Author
-
-Built by Loller627e9
-⚡ Automation-focused developer
-
----
-
-⭐ Support
-
-If you like this project:
-
-- ⭐ Star the repo
-- 🍴 Fork it
-- 🚀 Improve it
-
----
-
-📜 License
-
-MIT License
-
----
-
-⚡ Philosophy
-
-Automate. Optimize. Dominate.
-
----
+Driving user accounts with a selfbot violates Discord's Terms of Service and
+can get accounts banned. This project is for educational use only. You are
+responsible for how you run it.
