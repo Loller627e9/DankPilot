@@ -21,6 +21,46 @@ log = logging.getLogger("dankfarm.emojis")
 API = "https://discord.com/api/v10"
 
 
+async def resolve_application_id(session: aiohttp.ClientSession) -> str | None:
+    """Returns the application's snowflake id.
+
+    The emoji routes reject the ``@me`` shorthand ("Value \"@me\" is not
+    snowflake"), so the real id has to be resolved first. ``/oauth2/applications/@me``
+    does accept ``@me``, so it is used as the lookup.
+    """
+    async with session.get(f"{API}/oauth2/applications/@me") as resp:
+        if resp.status != 200:
+            log.warning("Could not resolve the application id: %s", resp.status)
+            return None
+        data = await resp.json()
+    app_id = data.get("id")
+    if not app_id:
+        log.warning("Application lookup returned no id")
+    return app_id
+
+
+def _emoji_string(name: str, emoji: dict) -> str:
+    prefix = "a" if emoji.get("animated") else ""
+    return f"<{prefix}:{name}:{emoji['id']}>"
+
+
+async def fetch_map_with_session(session: aiohttp.ClientSession) -> dict[str, str]:
+    """Fetches the emoji map over an existing session (separated for testing)."""
+    mapping: dict[str, str] = {}
+    app_id = await resolve_application_id(session)
+    if not app_id:
+        return mapping
+    async with session.get(f"{API}/applications/{app_id}/emojis") as resp:
+        if resp.status != 200:
+            log.warning("Could not list application emojis: %s", resp.status)
+            return mapping
+        for emoji in (await resp.json()).get("items", []):
+            name = emoji.get("name")
+            if name:
+                mapping[name] = _emoji_string(name, emoji)
+    return mapping
+
+
 async def fetch_map() -> dict[str, str]:
     """Rebuilds the name -> ``<:name:id>`` map from the application's emojis.
 
@@ -28,22 +68,11 @@ async def fetch_map() -> dict[str, str]:
     when the local map does not (free hosts wipe the working directory). This
     lets the UI recover its custom emojis without re-uploading anything.
     """
-    mapping: dict[str, str] = {}
     if not config.BOT_TOKEN:
-        return mapping
+        return {}
     headers = {"Authorization": f"Bot {config.BOT_TOKEN}"}
-    async with (
-        aiohttp.ClientSession(headers=headers) as session,
-        session.get(f"{API}/applications/@me/emojis") as resp,
-    ):
-        if resp.status != 200:
-            log.warning("Could not list application emojis: %s", resp.status)
-            return mapping
-        for emoji in (await resp.json()).get("items", []):
-            name = emoji.get("name")
-            if name:
-                mapping[name] = f"<{'a' if emoji.get('animated') else ''}:{name}:{emoji['id']}>"
-    return mapping
+    async with aiohttp.ClientSession(headers=headers) as session:
+        return await fetch_map_with_session(session)
 
 
 async def ensure_map() -> dict[str, str]:
@@ -58,6 +87,11 @@ async def ensure_map() -> dict[str, str]:
     if mapping:
         E.save_custom(mapping)
         log.info("Recovered %d custom emoji(s) from the application", len(mapping))
+    else:
+        log.warning(
+            "No custom emojis found on the application — the UI will use unicode "
+            "icons. Run `python -m dankfarm.upload_emojis` once with BOT_TOKEN set."
+        )
     return mapping
 
 
@@ -70,15 +104,19 @@ async def upload_all() -> dict[str, str]:
         return mapping
 
     async with aiohttp.ClientSession(headers=headers) as session:
+        app_id = await resolve_application_id(session)
+        if not app_id:
+            log.warning("Cannot upload emojis without an application id")
+            return mapping
+
         # Existing application emojis, so re-runs are idempotent.
-        async with session.get(f"{API}/applications/@me/emojis") as resp:
+        async with session.get(f"{API}/applications/{app_id}/emojis") as resp:
             existing = {e["name"]: e for e in (await resp.json()).get("items", [])} if resp.status == 200 else {}
 
         for path in files:
             name = path.stem
             if name in existing:
-                emoji = existing[name]
-                mapping[name] = f"<{'a' if emoji.get('animated') else ''}:{name}:{emoji['id']}>"
+                mapping[name] = _emoji_string(name, existing[name])
                 continue
             data = aiohttp.FormData()
             data.add_field("name", name)
@@ -88,10 +126,10 @@ async def upload_all() -> dict[str, str]:
                 filename=path.name,
                 content_type="image/gif" if path.suffix == ".gif" else "image/png",
             )
-            async with session.post(f"{API}/applications/@me/emojis", data=data) as resp:
+            async with session.post(f"{API}/applications/{app_id}/emojis", data=data) as resp:
                 if resp.status in (200, 201):
                     emoji = await resp.json()
-                    mapping[name] = f"<{'a' if emoji.get('animated') else ''}:{name}:{emoji['id']}>"
+                    mapping[name] = _emoji_string(name, emoji)
                     log.info("Uploaded %s", name)
                 else:
                     log.warning("Failed to upload %s: %s %s", name, resp.status, await resp.text())

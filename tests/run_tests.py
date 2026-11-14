@@ -521,6 +521,49 @@ def test_emoji_recovery() -> None:
         E._cache = saved
 
 
+def test_emoji_routes_use_snowflake() -> None:
+    """The emoji routes must be called with a real app id, never '@me'.
+
+    Discord rejects '@me' on /applications/{id}/emojis with 400
+    ("Value \"@me\" is not snowflake"), which silently produced an empty map.
+    """
+    import asyncio
+
+    from dankfarm import upload_emojis as U
+
+    class _Resp:
+        def __init__(self, status, payload):
+            self.status = status
+            self._payload = payload
+
+        async def json(self):
+            return self._payload
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc):
+            return False
+
+    class _Session:
+        def __init__(self):
+            self.urls: list[str] = []
+
+        def get(self, url):
+            self.urls.append(url)
+            if "oauth2/applications" in url:
+                return _Resp(200, {"id": "1570854901846900766"})
+            return _Resp(200, {"items": [{"name": "dk_coin", "id": "111", "animated": True}]})
+
+    session = _Session()
+    mapping = asyncio.run(U.fetch_map_with_session(session))
+    check("emoji: emoji route uses the snowflake",
+          any("/applications/1570854901846900766/emojis" in u for u in session.urls))
+    check("emoji: emoji route never uses @me",
+          not any("/applications/@me/emojis" in u for u in session.urls))
+    eq("emoji: animated flag preserved", mapping, {"dk_coin": "<a:dk_coin:111>"})
+
+
 def test_branding() -> None:
     eq("brand: default name", config.BRAND_NAME, "DANK FARM")
     check("brand: tagline present", bool(config.BRAND_TAGLINE), config.BRAND_TAGLINE)
@@ -552,6 +595,7 @@ def main() -> int:
         test_grinder_bad_login,
         test_banner,
         test_emoji_recovery,
+        test_emoji_routes_use_snowflake,
         test_branding,
     ]
     for test in tests:
