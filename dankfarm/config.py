@@ -72,7 +72,9 @@ CYCLE_JITTER = _env_int("CYCLE_JITTER", 20000)
 
 FARM_COMMANDS = [
     cmd.strip()
-    for cmd in _env("FARM_COMMANDS", "pls beg,pls hunt,pls dig,pls search,pls fish,pls work").split(",")
+    for cmd in _env(
+        "FARM_COMMANDS", "pls beg,pls hunt,pls dig,pls search,pls fish,pls work,pls bal"
+    ).split(",")
     if cmd.strip()
 ]
 

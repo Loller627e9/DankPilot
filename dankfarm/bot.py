@@ -24,7 +24,9 @@ def has_permission(user_id: int) -> bool:
     access = store.load_access()
     if user_id == access.get("ownerId") or user_id == config.OWNER_ID:
         return True
-    return user_id in access.get("authorizedUsers", [])
+    # IDs are stored as strings (from chat input); compare as strings so a
+    # granted user is not silently rejected.
+    return str(user_id) in {str(uid) for uid in access.get("authorizedUsers", [])}
 
 
 class StatsView(disnake.ui.View):
@@ -39,10 +41,14 @@ class StatsView(disnake.ui.View):
 
     # -- rendering ------------------------------------------------------------
     def _accounts(self) -> list[dict]:
-        return store.load_tokens().get("tokens", [])
+        # Only accounts that have logged in successfully are shown.
+        return self.bot.grinder.verified_entries()
 
     def _stats(self) -> dict:
-        return store.load_stats().get("stats", {})
+        # Restrict to accounts that are actually registered, so stale entries
+        # from removed or unverified tokens cannot skew the totals.
+        known = {e["token"] for e in self._accounts()}
+        return {t: s for t, s in store.load_stats().get("stats", {}).items() if t in known}
 
     def render(self) -> tuple[disnake.Embed, disnake.File | None]:
         tokens = self._accounts()
@@ -90,8 +96,10 @@ class StatsView(disnake.ui.View):
     def _sync(self) -> None:
         total = len(self._accounts())
         at_overview = self.page < 0
+        # From the overview, Next moves onto the first account page, so it is
+        # only disabled when there is nothing to page through.
+        self.next.disabled = total == 0 or (not at_overview and self.page >= total - 1)
         self.prev.disabled = at_overview
-        self.next.disabled = at_overview or self.page >= total - 1
         self.overview.disabled = at_overview
         self.toggle.disabled = at_overview or total == 0
 
@@ -237,12 +245,16 @@ class DankFarmBot(commands.Bot):
         if not channel_id.isdigit():
             await reply("error", "Channel ID must be numeric.")
             return
-        if not self.grinder.add_token(token, int(channel_id)):
-            await reply("error", "That token is already registered.")
-            return
-        index = len(store.load_tokens()["tokens"]) - 1
         masked = f"{token[:4]}...{token[-4:]}"
-        await reply("success", f"Added `{masked}` as **#{index}** (inactive). Start with `{prefix}toggle {index}`.")
+        await reply("success", f"Checking `{masked}` can log in...")
+        # The token is only stored if the login succeeds, so a bad token never
+        # ends up on disk or in the stats panel.
+        res = await self.grinder.add_token(token, int(channel_id))
+        if not res.get("ok"):
+            await reply("error", f"Login failed for `{masked}` — not saved. ({res.get('error')})")
+            return
+        index = res["index"]
+        await reply("success", f"Verified and added `{masked}` as **#{index}**.")
 
     async def _cmd_access(self, cmd, args, prefix, reply) -> None:
         if not args:

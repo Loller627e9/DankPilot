@@ -79,6 +79,56 @@ def test_classify() -> None:
     eq("classify: hunt command", parsing.classify_reply("pls hunt", ""), "hunt")
     eq("classify: dig command", parsing.classify_reply("pls dig", ""), "dig")
     eq("classify: by content", parsing.classify_reply("pls x", "your wallet holds 5"), "balance")
+    eq("classify: beg coin gain", parsing.classify_reply("pls beg", "You got 500 coins!"), "coin")
+
+
+def test_parse_loot_custom_emoji() -> None:
+    """Real Dank Memer loot puts a custom emoji between the number and name."""
+    loot = parsing.parse_loot("**1** <:Frog:123> Frog, **2** <:Snake:456> Snake", "hunt")
+    eq("loot: custom-emoji animals", loot["animals"], ["Frog", "Snake"])
+    loot = parsing.parse_loot("**1** <:Rock:1> Rock, **2** <:Gem:2> Gem", "dig")
+    eq("loot: custom-emoji items", loot["items"], ["Rock", "Gem"])
+    loot = parsing.parse_loot("You dug up a Rock!", "dig")
+    eq("loot: plain dug-up", loot["items"], ["Rock"])
+    # The kind must win over the wording, so a dig never lands in animals.
+    loot = parsing.parse_loot("You caught a Frog!", "dig")
+    eq("loot: kind overrides wording", loot, {"animals": [], "items": ["Frog"]})
+
+
+def test_failures_not_counted() -> None:
+    """Cooldown / refusal replies must not inflate the totals."""
+    token = "fail-tok"
+    parsing.initialize_stats(token, "T")
+    for text in ("You're on a cooldown!", "You don't have enough coins!"):
+        check("failure: detected", parsing.is_failure(text), text)
+    entry = parsing.apply_stats(token, "hunt", "You're on a cooldown!")
+    eq("failure: animals unchanged", entry["animals"], 0)
+    eq("failure: failure counted", entry["failures"], 1)
+    eq("failure: no loot parsed", parsing.parse_loot("You're on a cooldown!"),
+       {"animals": [], "items": []})
+
+
+def test_coin_gain_recorded() -> None:
+    """A beg/work reply that shows coins must raise the coin total."""
+    token = "coin-tok"
+    parsing.initialize_stats(token, "T")
+    entry = parsing.apply_stats(token, "coin", "You begged and got 500 coins!")
+    eq("coin: gain recorded", entry["coins"], 500)
+    entry = parsing.apply_stats(token, "coin", "You earned <:Coin:1> 1,250 from work!")
+    eq("coin: second gain added", entry["coins"], 1750)
+    # A later balance check must not count the gains a second time.
+    entry = parsing.apply_stats(token, "balance", "Wallet: 1,750\nBank: 0")
+    eq("coin: no double count via balance", entry["coins"], 1750)
+
+
+def test_permission_ids() -> None:
+    """grant() stores a string id; has_permission must still match it."""
+    from dankfarm import bot as bot_mod
+
+    store.save_access({"ownerId": 1, "authorizedUsers": ["123456789"]})
+    check("perm: string id matches", bot_mod.has_permission(123456789))
+    check("perm: stranger rejected", not bot_mod.has_permission(999))
+    store.save_access({"ownerId": 1, "authorizedUsers": []})
 
 
 def test_apply_stats() -> None:
@@ -121,13 +171,79 @@ def test_grinder_helpers() -> None:
 
 
 def test_grinder_bookkeeping() -> None:
+    import asyncio
+
     store.save_tokens({"tokens": []})
     g = G.Grinder()
-    check("grinder: add token", g.add_token("tok-1", 555))
-    check("grinder: duplicate rejected", not g.add_token("tok-1", 555))
-    eq("grinder: one token stored", len(store.load_tokens()["tokens"]), 1)
-    check("grinder: not running initially", not g.is_running("tok-1"))
+
+    # A token is only stored once its login succeeds, so stub start() to
+    # simulate a good login and a rejected one.
+    async def fake_start(token, channel_id):
+        return {"ok": token == "good-token", "status": "started"} if token == "good-token" \
+            else {"ok": False, "status": "failed", "error": "login failed"}
+
+    g.start = fake_start  # type: ignore[assignment]
+
+    async def run() -> None:
+        ok = await g.add_token("good-token", 555)
+        check("grinder: verified token added", ok.get("ok") is True, str(ok))
+        dup = await g.add_token("good-token", 555)
+        check("grinder: duplicate rejected", dup.get("ok") is False, str(dup))
+        bad = await g.add_token("bad-token", 555)
+        check("grinder: bad token rejected", bad.get("ok") is False, str(bad))
+
+    asyncio.run(run())
+
+    eq("grinder: only the verified token stored", len(store.load_tokens()["tokens"]), 1)
+    eq("grinder: stored token marked verified", store.load_tokens()["tokens"][0]["verified"], True)
+    check("grinder: bad token never stored",
+          all(e["token"] != "bad-token" for e in store.load_tokens()["tokens"]))
+    check("grinder: not running initially", not g.is_running("good-token"))
     eq("grinder: running set empty", g.running_tokens(), set())
+
+
+def test_add_token_pending_not_saved() -> None:
+    """A login that never completes must not be persisted as an account."""
+    import asyncio
+
+    store.save_tokens({"tokens": []})
+    g = G.Grinder()
+
+    async def pending_start(token, channel_id):
+        return {"ok": True, "status": "pending"}
+
+    async def fake_stop(token):
+        return False
+
+    g.start = pending_start  # type: ignore[assignment]
+    g.stop = fake_stop  # type: ignore[assignment]
+    res = asyncio.run(g.add_token("slow-token", 1))
+    check("pending login: rejected", res.get("ok") is False, str(res))
+    eq("pending login: nothing saved", store.load_tokens()["tokens"], [])
+
+
+def test_unverified_hidden() -> None:
+    """An account without a verified flag must not be listed."""
+    store.save_tokens({"tokens": [
+        {"token": "verified-1", "channelId": "1", "active": False, "verified": True},
+        {"token": "pending-1", "channelId": "2", "active": False, "verified": False},
+    ]})
+    g = G.Grinder()
+    tokens = [e["token"] for e in g.verified_entries()]
+    eq("entries: unverified hidden", tokens, ["verified-1"])
+
+
+def test_remove_token_drops_stats() -> None:
+    """Removing an account must also delete its stats entry."""
+    import asyncio
+
+    store.save_tokens({"tokens": [{"token": "tok-x", "channelId": "1", "active": False, "verified": True}]})
+    parsing.initialize_stats("tok-x", "Tester")
+    g = G.Grinder()
+
+    asyncio.run(g.remove_token(0))
+    eq("remove: token list empty", store.load_tokens()["tokens"], [])
+    check("remove: stats dropped", "tok-x" not in store.load_stats()["stats"])
 
 
 def test_grinder_bad_login() -> None:
@@ -136,7 +252,6 @@ def test_grinder_bad_login() -> None:
 
     store.save_tokens({"tokens": []})
     g = G.Grinder()
-    g.add_token("invalid-token", 123456789012345678)
 
     async def run() -> dict:
         res = await g.start("invalid-token", 123456789012345678)
@@ -146,7 +261,7 @@ def test_grinder_bad_login() -> None:
     res = asyncio.run(run())
     check("bad login: reports failure", res.get("ok") is False, str(res))
     eq("bad login: status failed", res.get("status"), "failed")
-    eq("bad login: account deactivated", store.load_tokens()["tokens"][0]["active"], False)
+    eq("bad login: nothing written to disk", store.load_tokens()["tokens"], [])
 
 
 # --- banner ------------------------------------------------------------------
@@ -173,11 +288,18 @@ def main() -> int:
         test_store,
         test_parse_coins,
         test_parse_loot,
+        test_parse_loot_custom_emoji,
         test_classify,
+        test_failures_not_counted,
+        test_coin_gain_recorded,
+        test_permission_ids,
         test_apply_stats,
         test_emojis,
         test_grinder_helpers,
         test_grinder_bookkeeping,
+        test_add_token_pending_not_saved,
+        test_unverified_hidden,
+        test_remove_token_drops_stats,
         test_grinder_bad_login,
         test_banner,
         test_branding,

@@ -266,12 +266,21 @@ class Grinder:
             task = self._tasks.pop(token, None)
             if task:
                 task.cancel()
-            await self._schedule_restart(token, account.channel_id)
+        # _schedule_restart calls start(), which takes the same lock, so it must
+        # run outside the block above or the restart would deadlock.
+        await self._schedule_restart(token, account.channel_id)
 
     async def _schedule_restart(self, token: str, channel_id: int) -> None:
         if self._stopping or not self._entry_active(token):
             return
         attempt = self._restart_attempts.get(token, 0) + 1
+        if attempt > config.LOGIN_RETRIES:
+            # Stop after a bounded number of tries instead of retrying a dead
+            # token forever (and spamming the gateway with login attempts).
+            log.warning("Giving up on %s after %d attempt(s)", mask_token(token), attempt - 1)
+            self._restart_attempts.pop(token, None)
+            self._set_active(token, False)
+            return
         self._restart_attempts[token] = attempt
         delay = backoff_delay(attempt)
         log.info("Restarting %s in %.0fs (attempt %d)", mask_token(token), delay, attempt)
@@ -287,7 +296,7 @@ class Grinder:
     # -- boot / bulk ----------------------------------------------------------
     async def start_active(self) -> int:
         started = 0
-        for entry in store.load_tokens().get("tokens", []):
+        for entry in self.verified_entries():
             if not entry.get("active"):
                 continue
             res = await self.start(entry["token"], int(entry["channelId"]))
@@ -297,7 +306,7 @@ class Grinder:
 
     async def start_all(self) -> int:
         started = 0
-        for entry in store.load_tokens().get("tokens", []):
+        for entry in self.verified_entries():
             res = await self.start(entry["token"], int(entry["channelId"]))
             if res.get("ok"):
                 started += 1
@@ -339,7 +348,7 @@ class Grinder:
                 log.warning("Watchdog: %s stalled", mask_token(token))
                 self._spawn(self.handle_drop(token))
 
-            for entry in store.load_tokens().get("tokens", []):
+            for entry in self.verified_entries():
                 if not entry.get("active"):
                     continue
                 token = entry["token"]
@@ -358,6 +367,15 @@ class Grinder:
             task.cancel()
 
     # -- persistence ----------------------------------------------------------
+    def verified_entries(self) -> list[dict]:
+        """Accounts with a verified login.
+
+        An account is only written to disk after it has logged in once, so
+        everything here is known-good. ``verified`` defaults to True so accounts
+        saved by an older build keep working.
+        """
+        return [e for e in store.load_tokens().get("tokens", []) if e.get("verified", True)]
+
     def _entry_active(self, token: str) -> bool:
         for entry in store.load_tokens().get("tokens", []):
             if entry.get("token") == token:
@@ -374,39 +392,72 @@ class Grinder:
         if changed:
             store.save_tokens(data)
 
-    def add_token(self, token: str, channel_id: int) -> bool:
+    async def add_token(self, token: str, channel_id: int) -> dict:
+        """Registers a token, but only after it proves it can log in.
+
+        Nothing is written to disk unless the login succeeds, so a bad token
+        never occupies storage or shows up in the stats panel.
+        """
+        if any(e.get("token") == token for e in store.load_tokens().get("tokens", [])):
+            return {"ok": False, "error": "already registered"}
+
+        res = await self.start(token, channel_id)
+        # Only a definitive "started" counts; a pending/timed-out login must not
+        # be saved, or an unverified account would end up on disk.
+        if not res.get("ok") or res.get("status") != "started":
+            # start() already tore the client down; make sure no stray state remains.
+            await self.stop(token)
+            return {"ok": False, "error": res.get("error") or "login did not complete"}
+
         data = store.load_tokens()
-        if any(entry.get("token") == token for entry in data["tokens"]):
-            return False
-        data["tokens"].append({"token": token, "channelId": str(channel_id), "active": False})
-        store.save_tokens(data)
-        return True
+        data["tokens"].append(
+            {"token": token, "channelId": str(channel_id), "active": True, "verified": True}
+        )
+        if not store.save_tokens(data):
+            # Could not persist: do not leave a running account that vanishes on
+            # the next restart.
+            await self.stop(token)
+            stats = store.load_stats()
+            if stats["stats"].pop(token, None) is not None:
+                store.save_stats(stats)
+            return {"ok": False, "error": "could not save account to disk"}
+        return {"ok": True, "index": len(data["tokens"]) - 1}
 
     async def remove_token(self, index: int) -> bool:
-        data = store.load_tokens()
-        if index < 0 or index >= len(data["tokens"]):
+        # Resolve the index against the same list the panel shows, then drop the
+        # matching entry from the raw store so the two cannot drift apart.
+        entries = self.verified_entries()
+        if index < 0 or index >= len(entries):
             return False
-        entry = data["tokens"].pop(index)
+        token = entries[index]["token"]
+        data = store.load_tokens()
+        data["tokens"] = [e for e in data["tokens"] if e.get("token") != token]
         store.save_tokens(data)
-        await self.stop(entry["token"])
+        await self.stop(token)
+        # Drop the account's stats too, so nothing is left behind.
+        stats = store.load_stats()
+        if stats["stats"].pop(token, None) is not None:
+            store.save_stats(stats)
         return True
 
     async def toggle(self, index: int) -> dict:
-        data = store.load_tokens()
-        if index < 0 or index >= len(data["tokens"]):
+        entries = self.verified_entries()
+        if index < 0 or index >= len(entries):
             return {"ok": False, "active": False, "error": "no such account"}
-        entry = data["tokens"][index]
-        active = not entry.get("active")
-        entry["active"] = active
-        store.save_tokens(data)
+        token = entries[index]["token"]
+        active = not entries[index].get("active")
+
         if active:
-            res = await self.start(entry["token"], int(entry["channelId"]))
+            res = await self.start(token, int(entries[index]["channelId"]))
             if not res.get("ok"):
-                entry["active"] = False
-                store.save_tokens(data)
+                # Never leave a dead token marked active.
+                self._set_active(token, False)
                 return {"ok": False, "active": False, "error": res.get("error")}
+            self._set_active(token, True)
             return {"ok": True, "active": True}
-        await self.stop(entry["token"])
+
+        await self.stop(token)
+        self._set_active(token, False)
         return {"ok": True, "active": False}
 
     def reset_stats(self) -> bool:

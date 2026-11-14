@@ -6,6 +6,7 @@ half-written file that fails to parse on the next boot.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import tempfile
@@ -22,19 +23,23 @@ def read_json(path: Path, default: Any) -> Any:
 
 
 def write_json(path: Path, data: Any) -> bool:
-    path.parent.mkdir(parents=True, exist_ok=True)
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         fd, tmp = tempfile.mkstemp(dir=str(path.parent), suffix=".tmp")
-        try:
-            with os.fdopen(fd, "w", encoding="utf-8") as fh:
-                json.dump(data, fh, indent=2)
-            os.replace(tmp, path)
-        finally:
-            if os.path.exists(tmp):
-                os.remove(tmp)
-        return True
     except OSError:
         return False
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+        os.replace(tmp, path)
+        return True
+    except (OSError, TypeError, ValueError):
+        return False
+    finally:
+        # Only removes the temp file when the replace did not happen; after a
+        # successful replace the path no longer exists.
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
 
 
 def load_tokens() -> dict:

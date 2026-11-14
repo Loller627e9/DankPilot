@@ -63,7 +63,7 @@ your server and falls back to unicode everywhere else.
 | --- | --- |
 | `$help` | Command list |
 | `$stats` | Paginated stats panel (buttons) |
-| `$add-token <token> <channelId>` | Register an account (inactive) |
+| `$add-token <token> <channelId>` | Log in to verify, then register the account |
 | `$remove-token <index>` | Delete an account |
 | `$toggle <index>` | Start / stop one account |
 | `$start-all` / `$stop-all` | Start / stop every account |
@@ -87,6 +87,22 @@ Slash commands: `/stats`, `/ping`, `/help`.
 
 Each account page shows coins earned, animals caught, items found, commands
 sent, failures, and the masked token, with a matching banner image.
+
+### What counts as an account
+
+An account is written to disk **only after it logs in successfully**. `$add-token`
+tries the login first; if the token is bad it is rejected and nothing is stored,
+so a broken token never takes up space or shows up in the panel. Accounts that
+stop working are retried a few times (see `LOGIN_RETRIES`) and then dropped
+rather than hammering the gateway with login attempts forever.
+
+Stats are attributed by command, not by guessing from the reply text:
+
+- `pls bal` sets the coin high-water mark, so spending never lowers lifetime earnings.
+- `pls beg` / `pls work` replies that show a coin figure add that amount directly.
+- `pls hunt` / `pls dig` / `pls search` / `pls fish` add to animals or items.
+- Cooldown and refusal replies ("you're on a cooldown") count as failures and
+  never inflate the totals.
 
 ---
 
