@@ -7,8 +7,9 @@ pleasant to look at.
 - **Admin bot** (`discord.js`) — `$help`, `$stats`, token management, access control.
 - **Farming accounts** (`discord.js-selfbot-v13`) — send the commands on a loop
   and read the replies back into per-account stats.
-- **Styled UI** — dashboard, help panel and status cards built from the bundled
-  artwork, with custom animated emojis.
+- **Styled UI** — a paginated panel: an overview page plus one page per
+  account, browsable with buttons, built from the bundled artwork and custom
+  animated emojis.
 - **Free-host ready** — answers on `$PORT`, self-pings to stay awake, and
   re-registers accounts from `FARM_ACCOUNTS` after a restart.
 
@@ -44,13 +45,32 @@ All commands use the `$` prefix and are owner-only unless granted.
 | Command | What it does |
 | --- | --- |
 | `$help` | Show the command panel |
-| `$stats` | Show the dashboard with per-account totals |
+| `$stats` | Show the paginated dashboard: overview, then one page per account |
 | `$add-token <token> <channelId>` | Verify a token by logging in, then register it |
 | `$remove-token <index>` | Remove an account and its stats |
 | `$toggle <index>` | Start or stop one account |
 | `$start-all` / `$stop-all` | Start or stop every active account |
 | `$grant <@user>` / `$revoke <@user>` | Let someone else use the commands |
 | `$reset-stats` / `$export-stats` | Zero the counters / write them to a file |
+
+## What the panel tracks
+
+Each account page shows coins earned, current balance, commands sent, animals
+caught, items dug, hunts/digs that came back empty, hit rate and errors.
+
+Tracking is driven by the reply text, matched to the command that produced it:
+
+| Reply | Counted as |
+| --- | --- |
+| `You went hunting and brought back a **Frog**` | animal caught |
+| `You dug in the dirt and brought back a **Rock**` | item dug |
+| `You found nothing while digging` | a miss, which is how hit rate is computed |
+| `<:Coin:1> 1,850,722` + `<:Bank:2> 0 / 50,000` | balance, and coins earned |
+| `You're on a cooldown, try again in 30 seconds` | an error |
+
+Other currencies in the balance reply (gems, fish tokens, skin fragments) are
+recorded too, under **Other**. `pls beg` is not tracked on its own — it only
+adds coins, and the next `pls bal` picks that up.
 
 ## Configuration
 

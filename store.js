@@ -53,6 +53,12 @@ function blankStats(name) {
         items: 0,
         animals: 0,
         failures: 0,
+        // A hunt or dig that came back empty ("You found nothing while
+        // digging"). Counted separately so the panel can show hit rate.
+        misses: 0,
+        // Other currencies from the same balance reply (gems, fish tokens,
+        // skin fragments). Free-form, so a new one needs no code change.
+        extras: {},
     };
 }
 

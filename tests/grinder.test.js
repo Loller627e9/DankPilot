@@ -123,11 +123,11 @@ test('maskToken hides the body of a real token', () => {
     assert.ok(!masked.includes('secret'));
 });
 
-test('classifyReply maps commands to the stat they should touch', () => {
-    const { grinder } = load();
-    assert.strictEqual(grinder.classifyReply('pls hunt', ''), 'hunt');
-    assert.strictEqual(grinder.classifyReply('pls dig', ''), 'dig');
-    assert.strictEqual(grinder.classifyReply('pls bal', ''), 'balance');
-    assert.strictEqual(grinder.classifyReply('pls beg', 'Wallet: <:coin:1> 1  Bank: <:bank:2> 2'), 'balance');
-    assert.strictEqual(grinder.classifyReply('pls beg', 'you caught a frog'), 'hunt');
+test('a reply is matched to the command that produced it, not guessed from wording', () => {
+    // The command is known from the pending map, so no wording heuristic is
+    // needed. A dig reply always counts as an item even if it says "caught".
+    const P = require('../parsing');
+    assert.deepStrictEqual(P.parseLoot('You caught a **Rock**', 'dig').items, ['Rock']);
+    assert.deepStrictEqual(P.parseLoot('You caught a **Rock**', 'hunt').animals, ['Rock']);
 });
+

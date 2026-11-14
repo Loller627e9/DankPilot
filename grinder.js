@@ -348,7 +348,6 @@ module.exports = {
     isReady,
     maskToken,
     shutdown,
-    classifyReply,
     DANK_MEMER_ID,
     isActionable,
     _accounts: accounts,

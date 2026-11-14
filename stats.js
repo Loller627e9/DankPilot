@@ -63,16 +63,22 @@ function applyReply(token, kind, content) {
     const entry = data.stats[token];
 
     // A cooldown / refusal is not a result: count it as a failure and change
-    // nothing else, so error text cannot inflate the numbers.
-    if (parsing.isFailure(content)) {
+    // nothing else, so error text cannot inflate the numbers. A hunt/dig miss
+    // is checked first, because "nothing" wording can also look like a refusal.
+    const lootKind = kind === 'hunt' || kind === 'dig';
+    const missed = lootKind && parsing.isMiss(content);
+    if (!missed && parsing.isFailure(content)) {
         entry.failures = (entry.failures || 0) + 1;
         store.saveStats(data);
         return entry;
     }
 
     if (parsing.hasBalanceMarkers(content)) {
-        const { wallet, bank } = parsing.parseCoins(content);
+        const { wallet, bank, extras } = parsing.parseBalance(content);
         const total = wallet + bank;
+        if (extras && Object.keys(extras).length) {
+            entry.extras = Object.assign({}, entry.extras, extras);
+        }
         if (total > (entry.lastTotal || 0)) {
             // High-water mark: coins earned is the highest balance ever seen. It
             // only rises, so spending cannot make a later rise re-count coins
@@ -87,7 +93,11 @@ function applyReply(token, kind, content) {
 
     if (kind === 'hunt' || kind === 'dig') {
         const loot = parsing.parseLoot(content, kind);
-        if (kind === 'hunt') {
+        // "You found nothing while digging" is an outcome, not an error: it is
+        // the only way to count attempts that caught nothing.
+        if (loot.missed) {
+            entry.misses = (entry.misses || 0) + 1;
+        } else if (kind === 'hunt') {
             entry.animals = (entry.animals || 0) + loot.animals.length;
             entry.catches = (entry.catches || 0) + loot.animals.length;
         } else {

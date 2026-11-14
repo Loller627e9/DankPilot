@@ -9,6 +9,7 @@ const config = require('./config');
 const store = require('./store');
 const grinder = require('./grinder');
 const ui = require('./ui');
+const panel = require('./panel');
 
 const PREFIX = config.prefix;
 
@@ -60,8 +61,12 @@ async function handleCommand(message) {
             case 'help':
                 return reply(message, ui.helpPayload());
 
-            case 'stats':
-                return reply(message, ui.statsPayload(store.loadStats(), store.loadTokens()));
+            case 'stats': {
+                // Paginated: page 0 is the overview, then one page per account.
+                // The nav row is attached so the panel is browsable.
+                const view = panel.message(0);
+                return reply(message, view);
+            }
 
             case 'add-token': {
                 if (args.length < 2) {

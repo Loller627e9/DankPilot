@@ -65,7 +65,7 @@ test('a referenced hunt reply records an animal', () => {
     const { client, token } = newAccount();
     const acct = grinder._accounts.get(token);
     acct.pending.set('msg-2', 'pls hunt');
-    client.emit('messageCreate', message('**1 <:Frog:1> Frog**', { replyTo: 'msg-2' }));
+    client.emit('messageCreate', message('You went hunting and brought back a **Frog**', { replyTo: 'msg-2' }));
     return new Promise((resolve) => setImmediate(() => {
         assert.strictEqual(store.loadStats().stats[token].animals, 1);
         resolve();
@@ -76,7 +76,7 @@ test('a referenced dig reply records an item', () => {
     const { client, token } = newAccount();
     const acct = grinder._accounts.get(token);
     acct.pending.set('msg-3', 'pls dig');
-    client.emit('messageCreate', message('**1 <:Rock:1> Rock**', { replyTo: 'msg-3' }));
+    client.emit('messageCreate', message('You dug in the dirt and brought back a **Rock**', { replyTo: 'msg-3' }));
     return new Promise((resolve) => setImmediate(() => {
         assert.strictEqual(store.loadStats().stats[token].items, 1);
         resolve();
@@ -180,6 +180,53 @@ test('a throwing counter does not escape the handler', () => {
     store.loadStats = realLoad;
     return new Promise((resolve) => setImmediate(() => {
         assert.strictEqual(store.loadStats().stats[token].coins, 0);
+        resolve();
+    }));
+});
+
+test('a dig that finds nothing increments misses, not items', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('m-miss', 'pls dig');
+    client.emit('messageCreate', message('You found nothing while digging', { replyTo: 'm-miss' }));
+    return new Promise((resolve) => setImmediate(() => {
+        const entry = store.loadStats().stats[token];
+        assert.strictEqual(entry.misses, 1);
+        assert.strictEqual(entry.items, 0);
+        assert.strictEqual(entry.failures, 0, 'a miss is not an error');
+        resolve();
+    }));
+});
+
+test('a hit rate is computable from catches and misses', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('h1', 'pls hunt');
+    client.emit('messageCreate', message('You went hunting and brought back a **Frog**', { replyTo: 'h1' }));
+    acct.pending.set('h2', 'pls hunt');
+    client.emit('messageCreate', message('You found nothing while hunting', { replyTo: 'h2' }));
+    acct.pending.set('h3', 'pls hunt');
+    client.emit('messageCreate', message('You went hunting and brought back a **Frog**', { replyTo: 'h3' }));
+    return new Promise((resolve) => setImmediate(() => {
+        const entry = store.loadStats().stats[token];
+        assert.strictEqual(entry.catches, 2);
+        assert.strictEqual(entry.misses, 1);
+        resolve();
+    }));
+});
+
+test('balance extras are stored alongside the coins', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('b1', 'pls bal');
+    client.emit('messageCreate', message(
+        '<:Coin:1> 1,850,722\n<:Bank:2> 0 / 50,000\n<:GemsAnimated:5> 40',
+        { replyTo: 'b1' }
+    ));
+    return new Promise((resolve) => setImmediate(() => {
+        const entry = store.loadStats().stats[token];
+        assert.strictEqual(entry.lastTotal, 1850722);
+        assert.strictEqual(entry.extras.gems, 40);
         resolve();
     }));
 });

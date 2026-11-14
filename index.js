@@ -6,6 +6,7 @@ const store = require('./store');
 const grinder = require('./grinder');
 const handlers = require('./handlers');
 const health = require('./health');
+const panel = require('./panel');
 
 async function main() {
     store.ensureDir();
@@ -18,6 +19,9 @@ async function main() {
     }
 
     console.log(`🤖 Starting ${config.brandName}...`);
+
+    // The panel shows which accounts are live without importing the grinder.
+    panel.setRunningProvider(() => grinder.runningTokens());
 
     // access.json is created from OWNER_ID when missing. The original bot read
     // it without a fallback, so on a fresh clone the owner had no permission
@@ -63,6 +67,29 @@ async function main() {
             await handlers.handleCommand(message);
         } catch (err) {
             console.error('Command handler error:', err);
+        }
+    });
+
+    // Page navigation for the stats panel. Only the owner or an authorized
+    // user may browse, matching the command permission rule.
+    client.on('interactionCreate', async (interaction) => {
+        if (!interaction || typeof interaction.isButton !== 'function' || !interaction.isButton()) return;
+        if (!String(interaction.customId || '').startsWith('stats:')) return;
+        try {
+            if (!handlers.hasPermission(interaction.user && interaction.user.id)) {
+                return interaction.reply({ content: '❌ No permission.', ephemeral: true });
+            }
+            const action = String(interaction.customId).slice('stats:'.length);
+            // The page being viewed is not carried in the custom id, so read it
+            // back from the embed footer of the message being updated.
+            const { page } = panel.currentPage(action, panel.pageFromMessage(interaction.message));
+            const view = panel.message(page);
+            await interaction.update(view);
+        } catch (err) {
+            console.error('Panel interaction error:', err.message);
+            try {
+                if (!interaction.replied) await interaction.reply({ content: '❌ Panel error.', ephemeral: true });
+            } catch { /* already answered */ }
         }
     });
 

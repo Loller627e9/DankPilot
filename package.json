@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "test": "node --test tests/*.test.js",
-    "lint": "node --check index.js && node --check grinder.js && node --check handlers.js && node --check ui.js && node --check stats.js && node --check parsing.js && node --check store.js && node --check config.js && node --check emojis.js && node --check upload-emojis.js",
+    "lint": "node --check index.js && node --check panel.js && node --check health.js && node --check grinder.js && node --check handlers.js && node --check ui.js && node --check stats.js && node --check parsing.js && node --check store.js && node --check config.js && node --check emojis.js && node --check upload-emojis.js",
     "upload-emojis": "node upload-emojis.js"
   },
   "engines": {
