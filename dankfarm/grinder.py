@@ -139,6 +139,12 @@ class FarmAccount:
     def _start_cycle(self) -> None:
         if self._cycle_task and not self._cycle_task.done():
             self._cycle_task.cancel()
+        log.info(
+            "Farming started for %s in channel %s (%d commands/cycle)",
+            mask_token(self.token),
+            self.channel_id,
+            len(config.FARM_COMMANDS),
+        )
         self._cycle_task = asyncio.create_task(self._run_cycle())
 
     async def _run_cycle(self) -> None:
@@ -330,6 +336,36 @@ class Grinder:
             await self._schedule_restart(token, channel_id)
 
     # -- boot / bulk ----------------------------------------------------------
+    async def seed_from_env(self) -> int:
+        """Adds any ``FARM_ACCOUNTS`` entries that are not on disk yet.
+
+        Free hosts wipe the working directory, so ``tokens.json`` disappears on
+        every restart. Re-seeding from the environment means farming resumes
+        without re-adding each account by hand. Entries already registered are
+        left untouched, so this is safe to run on every boot.
+        """
+        if not config.FARM_ACCOUNTS:
+            return 0
+        known = {e.get("token") for e in store.load_tokens().get("tokens", [])}
+        added = 0
+        for item in config.FARM_ACCOUNTS:
+            token, _, channel = item.partition(":")
+            token, channel = token.strip(), channel.strip()
+            if not token or not channel.isdigit():
+                log.warning("Ignoring malformed FARM_ACCOUNTS entry (expected token:channelId)")
+                continue
+            if token in known:
+                continue
+            data = store.load_tokens()
+            data["tokens"].append(
+                {"token": token, "channelId": channel, "active": True, "verified": True}
+            )
+            if store.save_tokens(data):
+                known.add(token)
+                added += 1
+                log.info("Seeded account %s for channel %s", mask_token(token), channel)
+        return added
+
     async def start_active(self) -> int:
         started = 0
         for entry in self.verified_entries():

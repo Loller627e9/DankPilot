@@ -27,8 +27,12 @@ Multi-account Dank Memer automation panel. Selfbot accounts run on
   shorthand with `400 Value "@me" is not snowflake`. Always resolve the real id
   first via `/oauth2/applications/@me` (that route does accept `@me`).
 - `data/` is ephemeral on free hosts. Anything that must survive a restart is
-  either rebuilt at boot (the emoji map, from Discord) or seeded from env.
-- `python tests/run_tests.py` — tests, no extra dependency (151 checks)
+  either rebuilt at boot (the emoji map, from Discord) or re-seeded from env
+  (`FARM_ACCOUNTS` for the farming accounts).
+- `AUTO_START` defaults **on**, so a restart resumes farming. `FARM_ACCOUNTS`
+  is what makes that useful: without it `tokens.json` is gone and there is
+  nothing to resume, which shows up as every account sitting at 0.
+- `python tests/run_tests.py` — tests, no extra dependency (158 checks)
 - `ruff check dankfarm tests` — lint (config in pyproject.toml)
 
 ## Conventions

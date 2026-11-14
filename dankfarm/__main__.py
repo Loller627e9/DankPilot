@@ -46,9 +46,24 @@ async def main() -> None:
 
     grind = grinder_mod.Grinder()
     grind.start_watchdog()
+
+    # Free hosts wipe data/ on every restart, so accounts registered in a
+    # previous run are gone. Re-seed them from FARM_ACCOUNTS first.
+    seeded = await grind.seed_from_env()
+    if seeded:
+        log.info("Seeded %d account(s) from FARM_ACCOUNTS", seeded)
+
+    entries = grind.verified_entries()
+    if not entries:
+        log.warning(
+            "No farming accounts are registered — nothing will be farmed. Add them "
+            "with `$add-token <token> <channelId>`, or set FARM_ACCOUNTS so they "
+            "survive a restart."
+        )
+
     if config.AUTO_START:
         started = await grind.start_active()
-        log.info("Resumed %d active account(s)", started)
+        log.info("Resumed %d of %d active account(s)", started, len(entries))
     else:
         log.info("Auto-start is off — press Start in $stats or run $start-all to begin farming")
 

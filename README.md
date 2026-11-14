@@ -120,10 +120,23 @@ so a broken token never takes up space or shows up in the panel. Accounts that
 stop working are retried a few times (see `LOGIN_RETRIES`) and then dropped
 rather than hammering the gateway with login attempts forever.
 
-Farming does **not** start by itself. Newly added accounts stay idle until you
-press **Start** in the panel or run `$start-all`; this stops a redeploy from
-quietly resuming every account. Set `AUTO_START=true` if you want active
-accounts to resume on boot.
+Farming resumes automatically on boot (`AUTO_START=true` by default), so a
+restart does not silently leave the bot idle. Set `AUTO_START=false` if you
+would rather start each account by hand with **Start** or `$start-all`.
+
+### Surviving a restart: `FARM_ACCOUNTS`
+
+Free hosts wipe the working directory, so `data/tokens.json` is deleted on every
+restart and the registered accounts disappear — the panel then shows everything
+at 0. Set `FARM_ACCOUNTS` to re-register them on each boot:
+
+```
+FARM_ACCOUNTS=TOKEN_ONE:111111111111111111,TOKEN_TWO:222222222222222222
+```
+
+Each entry is `token:channelId`; commas or newlines separate entries. Seeded
+accounts are marked active, so with `AUTO_START=true` farming resumes by
+itself. Already-registered accounts are left untouched.
 
 ### How stats are read
 
@@ -162,7 +175,8 @@ The important ones:
 | `COMMAND_JITTER` / `CYCLE_JITTER` | `1500` / `20000` | Random spread (ms) |
 | `WATCHDOG_INTERVAL_MS` | `60000` | How often the watchdog checks |
 | `STALL_MS` | `180000` | Silence before an account is restarted |
-| `AUTO_START` | `false` | Resume active accounts on boot |
+| `AUTO_START` | `true` | Resume active accounts on boot |
+| `FARM_ACCOUNTS` | *(empty)* | `token:channelId` pairs re-seeded on boot |
 | `VIEW_TIMEOUT` | `600` | Seconds the stats panel stays clickable |
 | `FARM_COMMANDS` | `pls beg,pls hunt,pls dig,pls bal` | Commands sent each cycle |
 | `DATA_DIR` | `data` | Where JSON state lives |
@@ -181,7 +195,8 @@ The important ones:
 
 A disk is **not** configured in `render.yaml`, because Render's free plan does
 not offer persistent disks. State lives on the ephemeral filesystem at
-`DATA_DIR=data`, so it resets on every redeploy or restart — re-add accounts
+`DATA_DIR=data`, so it resets on every redeploy or restart. Set
+`FARM_ACCOUNTS` to re-register the accounts automatically; otherwise re-add them
 with `$add-token` after a deploy. Free instances also sleep after ~15 minutes
 of inactivity; the keep-alive server self-pings every 10 minutes to stay awake,
 but a truly idle instance will still cold-start on the next request.

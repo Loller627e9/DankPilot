@@ -429,9 +429,9 @@ def test_view_navigation() -> None:
     asyncio.run(run())
 
 
-def test_auto_start_default_off() -> None:
-    """Farming must not resume by itself unless AUTO_START is set."""
-    eq("config: AUTO_START defaults off", config.AUTO_START, False)
+def test_auto_start_default_on() -> None:
+    """A restart must resume farming without manual intervention."""
+    eq("config: AUTO_START defaults on", config.AUTO_START, True)
 
 
 def test_unverified_hidden() -> None:
@@ -564,6 +564,42 @@ def test_emoji_routes_use_snowflake() -> None:
     eq("emoji: animated flag preserved", mapping, {"dk_coin": "<a:dk_coin:111>"})
 
 
+def test_seed_from_env() -> None:
+    """FARM_ACCOUNTS re-seeds accounts after the ephemeral data/ is wiped."""
+    import asyncio
+
+    from dankfarm import config
+    from dankfarm import grinder as G
+
+    store.save_tokens({"tokens": []})
+    original = config.FARM_ACCOUNTS
+    try:
+        config.FARM_ACCOUNTS = [
+            "tok-alpha:111111111111111111",
+            "tok-beta:222222222222222222",
+            "malformed-no-channel",
+            "tok-alpha:111111111111111111",  # duplicate must not double-add
+        ]
+        grind = G.Grinder()
+        added = asyncio.run(grind.seed_from_env())
+        eq("seed: only valid unique entries added", added, 2)
+
+        tokens = store.load_tokens()["tokens"]
+        eq("seed: both accounts registered", len(tokens), 2)
+        eq("seed: channel stored as string", tokens[0]["channelId"], "111111111111111111")
+        check("seed: marked active", all(t["active"] for t in tokens))
+        check("seed: marked verified", all(t["verified"] for t in tokens))
+
+        # Running again must be a no-op, not a duplicate.
+        eq("seed: idempotent on second run", asyncio.run(grind.seed_from_env()), 0)
+        eq("seed: still two accounts", len(store.load_tokens()["tokens"]), 2)
+    finally:
+        config.FARM_ACCOUNTS = original
+        store.save_tokens({"tokens": []})
+
+
+
+
 def test_branding() -> None:
     eq("brand: default name", config.BRAND_NAME, "DANK FARM")
     check("brand: tagline present", bool(config.BRAND_TAGLINE), config.BRAND_TAGLINE)
@@ -581,7 +617,7 @@ def main() -> int:
         test_coin_gain_recorded,
         test_extract_reply_text,
         test_view_navigation,
-        test_auto_start_default_off,
+        test_auto_start_default_on,
         test_loot_fallback_unknown,
         test_reply_reference_gate,
         test_permission_ids,
@@ -596,6 +632,7 @@ def main() -> int:
         test_banner,
         test_emoji_recovery,
         test_emoji_routes_use_snowflake,
+        test_seed_from_env,
         test_branding,
     ]
     for test in tests:

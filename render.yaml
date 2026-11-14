@@ -13,10 +13,12 @@ services:
       - key: KEEP_ALIVE
         value: "true"
       # Render's free plan has no persistent disk, so data lives on the
-      # ephemeral filesystem and resets on redeploy. Tokens/stats are re-seeded
-      # from the dashboard or the .env / config on next boot.
+      # ephemeral filesystem and resets on redeploy. FARM_ACCOUNTS re-registers
+      # the farming accounts on every boot, so farming resumes by itself.
       - key: DATA_DIR
         value: data
+      - key: AUTO_START
+        value: "true"
       - key: COMMAND_INTERVAL
         value: "3000"
       - key: CYCLE_INTERVAL
@@ -34,4 +36,8 @@ services:
       - key: BOT_TOKEN
         sync: false
       - key: OWNER_ID
+        sync: false
+      # token:channelId pairs, so accounts survive a redeploy. Set this in the
+      # dashboard; without it the ephemeral data/ is wiped and nothing farms.
+      - key: FARM_ACCOUNTS
         sync: false

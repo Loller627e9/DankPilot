@@ -44,11 +44,33 @@ required.
 | --- | --- | --- |
 | `BOT_TOKEN` | yes | your Discord bot token |
 | `OWNER_ID` | yes | your Discord user ID |
+| `FARM_ACCOUNTS` | recommended | `token:channelId,token:channelId` |
+| `AUTO_START` | no | `true` (default) |
 | `KEEP_ALIVE` | no | `false` on bot-hosting.net (see below) |
 | `DATA_DIR` | no | `data` |
 | `BRAND_NAME` | no | `DANK FARM` |
 
 Everything else has a working default (see `.env.example`).
+
+### FARM_ACCOUNTS — why stats show 0
+
+The free plans have no persistent disk. `data/tokens.json` is deleted on every
+restart or redeploy, so accounts you added with `$add-token` are gone and
+nothing farms — the stats panel then shows every account at 0 coins.
+
+Set `FARM_ACCOUNTS` to re-register them on each boot:
+
+```
+FARM_ACCOUNTS=TOKEN_ONE:111111111111111111,TOKEN_TWO:222222222222222222
+```
+
+Each entry is `token:channelId`, separated by commas (newlines also work). The
+accounts are marked active, so with `AUTO_START=true` farming resumes on its
+own. Entries that are already registered are left alone.
+
+Stats themselves still reset on restart, because the counters live in the same
+ephemeral `data/` directory. Totals are recomputed from live Dank Memer replies
+as farming continues.
 
 ### KEEP_ALIVE on bot-hosting.net
 

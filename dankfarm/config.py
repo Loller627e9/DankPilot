@@ -76,9 +76,18 @@ FARM_COMMANDS = [
     if cmd.strip()
 ]
 
-# Farming does not begin until an account is started on purpose (the Start
-# button or $start-all). Set AUTO_START=true to resume active accounts on boot.
-AUTO_START = _env_bool("AUTO_START", False)
+# Accounts to (re)seed on boot, as "token:channelId" pairs separated by commas
+# or newlines. Free hosts wipe the working directory, so without this the
+# registered accounts vanish on every restart and nothing is ever farmed.
+FARM_ACCOUNTS = [
+    item.strip()
+    for item in _env("FARM_ACCOUNTS").replace("\n", ",").split(",")
+    if item.strip()
+]
+
+# Resume the registered accounts automatically on boot. On by default: the bot
+# exists to farm, and a restart should not silently leave it idle.
+AUTO_START = _env_bool("AUTO_START", True)
 
 # Seconds a stats panel stays interactive before its buttons stop working.
 VIEW_TIMEOUT = _env_int("VIEW_TIMEOUT", 600)
