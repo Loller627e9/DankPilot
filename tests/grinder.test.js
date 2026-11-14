@@ -124,10 +124,12 @@ test('maskToken hides the body of a real token', () => {
 });
 
 test('a reply is matched to the command that produced it, not guessed from wording', () => {
-    // The command is known from the pending map, so no wording heuristic is
-    // needed. A dig reply always counts as an item even if it says "caught".
+    // The command is known from the pending map, so the wording never has to be
+    // classified: the same hit text counts as an item for a dig and an animal
+    // for a hunt.
     const P = require('../parsing');
-    assert.deepStrictEqual(P.parseLoot('You caught a **Rock**', 'dig').items, ['Rock']);
-    assert.deepStrictEqual(P.parseLoot('You caught a **Rock**', 'hunt').animals, ['Rock']);
+    const hit = 'You dug in the dirt and brought back a **Rock**';
+    assert.deepStrictEqual(P.parseLoot(hit, 'dig').items, ['Rock']);
+    assert.deepStrictEqual(P.parseLoot(hit, 'hunt').animals, ['Rock']);
 });
 

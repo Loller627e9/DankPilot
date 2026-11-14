@@ -51,8 +51,8 @@ test('coins accrue again once the balance passes the old mark', () => {
 test('a hunt reply counts animals, a dig reply counts items', () => {
     const token = `${TOKEN}h`;
     stats.ensure(token, 'hunter');
-    stats.applyReply(token, 'hunt', '**1 <:Frog:1> Frog**');
-    stats.applyReply(token, 'dig', '**1 <:Rock:2> Rock**');
+    stats.applyReply(token, 'hunt', 'You went hunting and brought back a **Frog**');
+    stats.applyReply(token, 'dig', 'You dug in the dirt and brought back a **Rock**');
     const entry = store.loadStats().stats[token];
     assert.strictEqual(entry.animals, 1);
     assert.strictEqual(entry.items, 1);
