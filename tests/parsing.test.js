@@ -5,18 +5,29 @@ const P = require('../parsing');
 
 // --- hunt / dig -------------------------------------------------------------
 
-test('the hunt hit text counts one animal', () => {
+test('the hunt text counts one animal', () => {
     const r = P.parseLoot('You went hunting and brought back a **Frog**', 'hunt');
     assert.deepStrictEqual(r.animals, ['Frog']);
     assert.deepStrictEqual(r.items, []);
     assert.strictEqual(r.missed, false);
 });
 
-test('the dig hit text counts one item', () => {
+test('the dig text counts one item', () => {
     const r = P.parseLoot('You dug in the dirt and brought back a **Rock**', 'dig');
     assert.deepStrictEqual(r.items, ['Rock']);
     assert.deepStrictEqual(r.animals, []);
     assert.strictEqual(r.missed, false);
+});
+
+test('a trailing status line does not change the name', () => {
+    assert.deepStrictEqual(
+        P.parseLoot('You went hunting and brought back a **Frog** succes hunting', 'hunt').animals,
+        ['Frog']
+    );
+    assert.deepStrictEqual(
+        P.parseLoot('You dug in the dirt and brought back a **Rock** succes digging', 'dig').items,
+        ['Rock']
+    );
 });
 
 test('the dig miss text is a miss, not a catch', () => {
@@ -35,27 +46,38 @@ test('a miss is not also an error', () => {
     assert.strictEqual(P.isFailure('You found nothing while digging'), false);
 });
 
-test('the name works without the bold or the emoji', () => {
+test('the name works without the bold', () => {
     assert.deepStrictEqual(P.parseLoot('You went hunting and brought back a Frog', 'hunt').animals, ['Frog']);
 });
 
-test('a name shown only as an emoji is still counted', () => {
-    const r = P.parseLoot('You went hunting and brought back a <:Frog:1>', 'hunt');
-    assert.strictEqual(r.animals.length, 1, 'the catch is counted even with no printed name');
+test('a bolded multi-word name is kept whole', () => {
+    assert.deepStrictEqual(
+        P.parseLoot('You dug in the dirt and brought back a **Rusty Old Key**', 'dig').items,
+        ['Rusty Old Key']
+    );
 });
 
 test('an emoji followed by a name uses the name', () => {
-    const r = P.parseLoot('You went hunting and brought back a <:Frog:1> Frog', 'hunt');
-    assert.deepStrictEqual(r.animals, ['Frog']);
+    assert.deepStrictEqual(
+        P.parseLoot('You went hunting and brought back a <:Frog:1> Frog', 'hunt').animals,
+        ['Frog']
+    );
 });
 
-test('a multi-word name survives intact', () => {
-    assert.deepStrictEqual(P.parseLoot('You dug in the dirt and brought back a **Rusty Old Key**', 'dig').items, ['Rusty Old Key']);
+test('a reply with no readable name still counts the catch', () => {
+    const r = P.parseLoot('You went hunting and brought back a <:Frog:1>', 'hunt');
+    assert.strictEqual(r.animals.length, 1, 'the catch is counted without a name');
 });
 
 test('the command decides the counter, not the wording', () => {
-    assert.deepStrictEqual(P.parseLoot('You dug in the dirt and brought back a **Rock**', 'hunt').animals, ['Rock']);
-    assert.deepStrictEqual(P.parseLoot('You went hunting and brought back a **Frog**', 'dig').items, ['Frog']);
+    assert.deepStrictEqual(
+        P.parseLoot('You dug in the dirt and brought back a **Rock**', 'hunt').animals,
+        ['Rock']
+    );
+    assert.deepStrictEqual(
+        P.parseLoot('You went hunting and brought back a **Frog**', 'dig').items,
+        ['Frog']
+    );
 });
 
 // --- non-results ------------------------------------------------------------

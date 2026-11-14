@@ -39,17 +39,18 @@ const EXTRA_ALIASES = {
 };
 
 // -- loot --------------------------------------------------------------------
-// The three reply texts, used exactly as they arrive. Nothing here tries to
-// guess at other wording: a hit is "brought back", a miss is "found nothing".
-
-// "You found nothing while digging" / "...while hunting".
+// The reply texts, as they arrive. Only the part up to "back a" is the trigger;
+// whatever follows names the catch.
+//
+//   You went hunting and brought back a **Frog**
+//   You dug in the dirt and brought back a **Rock**
+//   You found nothing while digging
+const HUNT_HIT = /you went hunting and brought back a/i;
+const DIG_HIT = /you dug in the dirt and brought back a/i;
 const MISS = /found nothing while (?:digging|hunting|fishing|searching)/i;
 
-// "You went hunting and brought back a **Frog**"
-// "You dug in the dirt and brought back a **Rock**"
-// The name is whatever is bolded right after "brought back a". A reply that
-// shows only an emoji has no bold name, so it is counted without one.
-const HIT = /brought back a\s*(?:\*\*)?\s*(?:<a?:[A-Za-z0-9_]+:\d+>\s*)?(?:\*\*)?\s*([A-Za-z][\w' -]*)?/i;
+// Grammar and the trailing status words are not part of a name.
+const NOT_A_NAME = new Set(['a', 'an', 'the', 'success', 'succes', 'successful']);
 
 // -- errors ------------------------------------------------------------------
 const FAILURE = /cooldown|you don'?t have|not enough|you can'?t|you need|you'?re too|failed|try again|no luck|you already|nothing to|you have no|are you sure|you must wait|slow down|rate.?limit/i;
@@ -134,18 +135,35 @@ function parseCoins(content) {
     };
 }
 
-// Returns { animals, items, missed } from one of the three reply texts.
-// `kind` is 'hunt' or 'dig', which decides the counter; it comes from the
-// command that was sent, so the wording never has to be classified.
+// The name that follows the trigger. A bolded name is kept whole, so
+// "**Rusty Old Key**" stays one name; otherwise the first word is taken.
+// Returns null when nothing readable follows, so the catch is still counted.
+function lootName(rest) {
+    const strip = (t) => t.replace(/<a?:[A-Za-z0-9_]+:\d+>/g, ' ').replace(/\s+/g, ' ').trim();
+    const bold = /\*\*\s*([^*]+?)\s*\*\*/.exec(rest);
+    if (bold) {
+        const name = strip(bold[1]);
+        if (name && !NOT_A_NAME.has(name.toLowerCase())) return name;
+    }
+    const word = /[A-Za-z][\w'-]*/.exec(strip(rest));
+    if (!word) return null;
+    return NOT_A_NAME.has(word[0].toLowerCase()) ? null : word[0];
+}
+
+// Returns { animals, items, missed } from one of the reply texts. `kind` is
+// 'hunt' or 'dig' when the command is known, which decides the counter.
 function parseLoot(content, kind) {
     const text = String(content || '');
     if (MISS.test(text)) return { animals: [], items: [], missed: true };
 
-    const hit = HIT.exec(text);
+    const hunt = HUNT_HIT.exec(text);
+    const dig = hunt ? null : DIG_HIT.exec(text);
+    const hit = hunt || dig;
     if (!hit) return { animals: [], items: [], missed: false };
 
-    const name = (hit[1] || '').trim() || 'Unknown';
-    const animal = kind === 'hunt' || (kind !== 'dig' && /hunt/i.test(text));
+    const name = lootName(text.slice(hit.index + hit[0].length)) || 'Unknown';
+    const animal = kind === 'hunt' || (kind !== 'dig' && !!hunt);
+
     return animal
         ? { animals: [name], items: [], missed: false }
         : { animals: [], items: [name], missed: false };
@@ -163,5 +181,6 @@ module.exports = {
     COIN_MARKER,
     BANK_MARKER,
     MISS,
-    HIT,
+    HUNT_HIT,
+    DIG_HIT,
 };
