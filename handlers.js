@@ -1,0 +1,166 @@
+// Command handling for the admin bot.
+//
+// Command names, arguments and replies are unchanged from the original bot.
+// What changed is underneath: permission checks work when access.json is
+// missing, the file reads are guarded, and the replies are the styled UI
+// payloads.
+const path = require('path');
+const config = require('./config');
+const store = require('./store');
+const grinder = require('./grinder');
+const ui = require('./ui');
+
+const PREFIX = config.prefix;
+
+function loadAccess() {
+    return store.loadAccess();
+}
+
+function saveAccess(data) {
+    return store.saveAccess(data);
+}
+
+function hasPermission(userId) {
+    if (userId === undefined || userId === null) return false;
+    const id = String(userId);
+    const access = loadAccess();
+    if (access.ownerId && id === access.ownerId) return true;
+    // Compared as strings: ids from chat input are strings, and a numeric id in
+    // the file would otherwise never match.
+    return access.authorizedUsers.map(String).includes(id);
+}
+
+// Discord replies accept either a plain string or a payload object. Keeping
+// both paths means a UI failure can never leave the user without an answer.
+function reply(message, payload) {
+    return message.reply(payload);
+}
+
+function status(message, kind, text) {
+    try {
+        return reply(message, ui.statusPayload(kind, text));
+    } catch {
+        return reply(message, text);
+    }
+}
+
+async function handleCommand(message) {
+    const content = (message && message.content) || '';
+    if (!content.startsWith(PREFIX)) return;
+
+    if (!hasPermission(message.author && message.author.id)) {
+        return reply(message, '❌ No permission.');
+    }
+
+    const args = content.slice(PREFIX.length).trim().split(/ +/);
+    const cmd = (args.shift() || '').toLowerCase();
+
+    try {
+        switch (cmd) {
+            case 'help':
+                return reply(message, ui.helpPayload());
+
+            case 'stats':
+                return reply(message, ui.statsPayload(store.loadStats(), store.loadTokens()));
+
+            case 'add-token': {
+                if (args.length < 2) {
+                    return status(message, 'error', `Usage: \`${PREFIX}add-token <token> <channelId>\``);
+                }
+                const [token, channelId] = args;
+                if (!/^\d+$/.test(channelId)) {
+                    return status(message, 'error', 'Channel ID must be numeric.');
+                }
+                const added = grinder.addToken(token, channelId);
+                if (!added) return status(message, 'error', 'Failed to add token.');
+                const login = await grinder.startClient(token, channelId);
+                return login
+                    ? status(message, 'success', `Added and logged in \`${grinder.maskToken(token)}\``)
+                    : status(message, 'error', `Login failed for \`${grinder.maskToken(token)}\``);
+            }
+
+            case 'remove-token': {
+                const index = parseInt(args[0], 10);
+                if (Number.isNaN(index)) return status(message, 'error', 'Invalid index.');
+                const ok = await grinder.removeToken(index);
+                return ok
+                    ? status(message, 'success', `Removed token at index ${index}`)
+                    : status(message, 'error', 'Failed to remove token.');
+            }
+
+            case 'toggle': {
+                const index = parseInt(args[0], 10);
+                if (Number.isNaN(index)) return status(message, 'error', 'Invalid index.');
+                const res = await grinder.toggleToken(index);
+                if (res === false) return status(message, 'error', 'Index not found.');
+                if (!res.ok) {
+                    return status(message, 'error', `Login failed for \`${grinder.maskToken(args[0])}\``);
+                }
+                return res.active
+                    ? status(message, 'success', 'Account activated.')
+                    : status(message, 'success', 'Account stopped.');
+            }
+
+            case 'start-all': {
+                const count = await grinder.startAllClients(message);
+                return status(message, 'success', `Started ${count} client(s).`);
+            }
+
+            case 'stop-all': {
+                const stopped = await grinder.stopAllClients();
+                return status(message, 'success', `Stopped ${stopped} client(s).`);
+            }
+
+            case 'grant': {
+                const id = (args[0] || '').replace(/[<@!>]/g, '');
+                if (!id || !/^\d+$/.test(id)) {
+                    return status(message, 'error', `Usage: \`${PREFIX}grant <@user>\``);
+                }
+                const access = loadAccess();
+                if (access.authorizedUsers.includes(id)) {
+                    return status(message, 'error', 'Already has access.');
+                }
+                access.authorizedUsers.push(id);
+                return saveAccess(access)
+                    ? status(message, 'success', `Granted access to <@${id}>`)
+                    : status(message, 'error', 'Failed to grant.');
+            }
+
+            case 'revoke': {
+                const id = (args[0] || '').replace(/[<@!>]/g, '');
+                if (!id || !/^\d+$/.test(id)) {
+                    return status(message, 'error', `Usage: \`${PREFIX}revoke <@user>\``);
+                }
+                const access = loadAccess();
+                const at = access.authorizedUsers.indexOf(id);
+                if (at === -1) return status(message, 'error', 'Not authorized.');
+                access.authorizedUsers.splice(at, 1);
+                return saveAccess(access)
+                    ? status(message, 'success', `Revoked access from <@${id}>`)
+                    : status(message, 'error', 'Failed to revoke.');
+            }
+
+            case 'reset-stats': {
+                const ok = require('./stats').resetStats();
+                return ok
+                    ? status(message, 'success', 'Stats reset.')
+                    : status(message, 'error', 'Failed to reset stats.');
+            }
+
+            case 'export-stats': {
+                const file = require('./stats').exportStats();
+                return file
+                    ? status(message, 'success', `Exported: \`${path.basename(file)}\``)
+                    : status(message, 'error', 'Export failed.');
+            }
+
+            default:
+                return status(message, 'error', `Unknown command. Use \`${PREFIX}help\`.`);
+        }
+    } catch (err) {
+        console.error(`[CMD ERROR] ${cmd}:`, err);
+        return status(message, 'error', 'Internal error.');
+    }
+}
+
+module.exports = { handleCommand, hasPermission, loadAccess, saveAccess, PREFIX };

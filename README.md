@@ -1,243 +1,120 @@
-# 🚜 DANK FARM
+# 🚜 Dank Farm
 
-**Multi-Account Automation Suite**
+A Discord admin bot that runs several Dank Memer accounts from one place, with a
+styled dashboard, per-account stats, and the buttons and artwork that make it
+pleasant to look at.
 
-A control panel for running several Dank Memer farming accounts at once. You get
-one clean Discord bot with prefix commands *and* slash commands, a paginated
-stats panel with buttons, and image banners for every account.
-
-> **Read this first.** The farming accounts are driven with **user tokens**
-> (self-bots). Automating a user account breaks Discord's Terms of Service and
-> can get those accounts banned. That risk is inherent to the tool and is not
-> something the code can remove. Use accounts you are willing to lose.
-
----
-
-## What's new in v3 (the Python rewrite)
-
-- **Rewritten in Python.** Selfbot side runs on `discord.py-self`; the admin
-  bot runs on `disnake`. They coexist because they install under different
-  package names.
-- **Per-account stats pages.** `/stats` opens a panel you page through with
-  buttons (◀️ ▶️), plus Overview / Refresh / Start-Stop.
-- **Image banners.** Every reply can carry a Pillow-rendered card with the
-  **DANK FARM** brand name.
-- **Reliability.** A watchdog restarts stalled accounts; drops recover with
-  jittered exponential backoff; the farm loop can no longer die silently.
-
----
+- **Admin bot** (`discord.js`) — `$help`, `$stats`, token management, access control.
+- **Farming accounts** (`discord.js-selfbot-v13`) — send the commands on a loop
+  and read the replies back into per-account stats.
+- **Styled UI** — dashboard, help panel and status cards built from the bundled
+  artwork, with custom animated emojis.
+- **Free-host ready** — answers on `$PORT`, self-pings to stay awake, and
+  re-registers accounts from `FARM_ACCOUNTS` after a restart.
 
 ## Quick start
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-
-cp .env.example .env               # then edit .env (BOT_TOKEN, OWNER_ID)
-python -m dankfarm
+npm install
+cp .env.example .env          # then fill in BOT_TOKEN and OWNER_ID
+npm start
 ```
 
-`python main.py` works identically if you prefer a plain script entry point, or
-if your host expects a top-level `main.py`.
-
-In the Discord Developer Portal, open your application → **Bot** and enable
-**Message Content Intent**. The bot itself needs no privileged intents beyond
-that.
-
-### Upload the custom emojis (once)
+Or with `config.json` (the file the original bot used):
 
 ```bash
-python -m dankfarm.upload_emojis
+cp config.example.json config.json   # then edit it
+npm start
 ```
 
-This uploads everything in `emojis/` to your application and writes the
-resulting `<:name:id>` strings to `data/emojis.json`. The animated GIFs are
-uploaded as **animated** emojis, so the sparkle, coin, paw and tractor icons
-move in the panels.
+Environment variables win over `config.json`, so a host's dashboard settings are
+never silently overridden.
 
-On every boot the bot also rebuilds the map from your application's emojis. The
-emojis live on Discord's side, so a restart — including on free hosts that wipe
-the working directory — recovers them without re-uploading. Until the map has
-entries the UI uses unicode icons rather than showing a broken `:name:`
-placeholder.
+### Getting the two required values
 
----
-
-## Visuals
-
-Three rendered cards are attached to replies when Pillow is available:
-
-- **Overview / account cards** (`assets/stats_bg.png`, `assets/account_card_bg.png`)
-  — the paginated stats panel.
-- **Help banner** (`assets/help_banner.png`) — attached to `$help`.
-- **Status cards** (`assets/success_bg.png`, `assets/error_bg.png`) — attached to
-  command replies such as `$add-token`, with a green or red rail for success or
-  error.
-
-Every card degrades gracefully: with no Pillow or a missing asset the bot falls
-back to a plain gradient, and then to a text-only embed.
-
----
+1. **BOT_TOKEN** — [Developer Portal](https://discord.com/developers/applications) →
+   your app → **Bot** → *Reset Token*. Enable **Message Content Intent**.
+2. **OWNER_ID** — Discord → Settings → Advanced → **Developer Mode**, then
+   right-click your own name → **Copy ID**.
 
 ## Commands
 
+All commands use the `$` prefix and are owner-only unless granted.
+
 | Command | What it does |
 | --- | --- |
-| `$help` | Command list |
-| `$stats` | Paginated stats panel (buttons) |
-| `$add-token <token> <channelId>` | Log in to verify, then register the account |
-| `$remove-token <index>` | Delete an account |
-| `$toggle <index>` | Start / stop one account |
-| `$start-all` / `$stop-all` | Start / stop every account |
-| `$grant <@user>` / `$revoke <@user>` | Manage who may use the bot |
-| `$ping` | Latency |
+| `$help` | Show the command panel |
+| `$stats` | Show the dashboard with per-account totals |
+| `$add-token <token> <channelId>` | Verify a token by logging in, then register it |
+| `$remove-token <index>` | Remove an account and its stats |
+| `$toggle <index>` | Start or stop one account |
+| `$start-all` / `$stop-all` | Start or stop every active account |
+| `$grant <@user>` / `$revoke <@user>` | Let someone else use the commands |
+| `$reset-stats` / `$export-stats` | Zero the counters / write them to a file |
 
-Slash commands: `/stats`, `/ping`, `/help`.
+## Configuration
 
----
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `BOT_TOKEN` | — | **Required.** Admin bot token |
+| `OWNER_ID` | — | **Required.** Your Discord user id |
+| `FARM_ACCOUNTS` | *(empty)* | `token:channelId` pairs re-registered on boot |
+| `DATA_DIR` | `storage` | Where the JSON state lives |
+| `COMMAND_INTERVAL` | `3000` | Delay between commands (ms) |
+| `CYCLE_INTERVAL` | `45000` | Delay between cycles (ms) |
+| `FARM_COMMANDS` | `pls beg,pls hunt,pls dig,pls bal` | Commands sent each cycle |
+| `BRAND_NAME` | `DANK FARM` | Banner and embed title |
+| `COMMAND_PREFIX` | `$` | Command prefix |
+| `PORT` | *(unset)* | Health-server port; unset disables it |
 
-## The stats panel
+### Why `FARM_ACCOUNTS` matters
 
-`$stats` (or `/stats`) opens the overview. Buttons:
+Free hosts wipe the working directory on every restart. `storage/tokens.json` is
+deleted with it, so accounts added through `$add-token` disappear and nothing
+farms — which is what makes the dashboard show `0` for everything.
 
-- **◀️ Prev / ▶️ Next** — move between accounts
-- **🚜 Overview** — jump back to the all-accounts summary
-- **🔄 Refresh** — re-read the numbers
-- **Start / Stop** — toggle the account you are looking at (the label follows the
-  account's current state)
-
-Each account page shows coins earned, animals caught, items found, commands
-sent, failures, and the masked token, with a matching banner image. Panels stay
-clickable for `VIEW_TIMEOUT` seconds (10 minutes by default); after that, run
-`$stats` again.
-
-### What counts as an account
-
-An account is written to disk **only after it logs in successfully**. `$add-token`
-tries the login first; if the token is bad it is rejected and nothing is stored,
-so a broken token never takes up space or shows up in the panel. Accounts that
-stop working are retried a few times (see `LOGIN_RETRIES`) and then dropped
-rather than hammering the gateway with login attempts forever.
-
-Farming resumes automatically on boot (`AUTO_START=true` by default), so a
-restart does not silently leave the bot idle. Set `AUTO_START=false` if you
-would rather start each account by hand with **Start** or `$start-all`.
-
-### Surviving a restart: `FARM_ACCOUNTS`
-
-Free hosts wipe the working directory, so `data/tokens.json` is deleted on every
-restart and the registered accounts disappear — the panel then shows everything
-at 0. Set `FARM_ACCOUNTS` to re-register them on each boot:
+`FARM_ACCOUNTS` re-registers them at boot:
 
 ```
 FARM_ACCOUNTS=TOKEN_ONE:111111111111111111,TOKEN_TWO:222222222222222222
 ```
 
-Each entry is `token:channelId`; commas or newlines separate entries. Seeded
-accounts are marked active, so with `AUTO_START=true` farming resumes by
-itself. Already-registered accounts are left untouched.
+Separate entries with commas or newlines. Already-registered accounts are left
+alone, so running twice is safe.
 
-### How stats are read
+## Custom emojis and artwork
 
-Dank Memer sends its results inside an **embed**, and `message.content` is
-usually empty — so the bot flattens the embed (description, title, and every
-field) before parsing. Both the custom-emoji shape (`**1 <:Frog:123> Frog`) and
-the spaced shape (`**1** <:Frog:123> Frog`) are recognised. Every command the
-bot sends is remembered as "in flight", and each reply is matched back to the
-command it answers, so unrelated Dank Memer posts (drops, events) are ignored.
-Because a reply can arrive *after* the next command was sent, all in-flight
-commands are tracked at once — not just the most recent one. Stats are
-attributed by command:
-
-- A reply that carries both a Coin and a Bank marker sets the balance; the coin
-  total tracks the high-water mark, so spending never lowers lifetime earnings.
-- `pls hunt` / `pls dig` add to animals or items.
-- If a loot reply clearly says something was caught or found but the name format
-  was not recognised, it still counts once rather than silently reading as zero.
-- Cooldown and refusal replies ("you're on a cooldown") count as failures and
-  never inflate the totals.
-
----
-
-## Configuration
-
-All settings are environment variables; see `.env.example` for the full list.
-The important ones:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `BOT_TOKEN` | — | Admin bot token (required) |
-| `OWNER_ID` | — | Your user ID (required) |
-| `COMMAND_PREFIX` | `$` | Text command prefix |
-| `COMMAND_INTERVAL` | `3000` | Delay between commands (ms) |
-| `CYCLE_INTERVAL` | `45000` | Delay between cycles (ms) |
-| `COMMAND_JITTER` / `CYCLE_JITTER` | `1500` / `20000` | Random spread (ms) |
-| `WATCHDOG_INTERVAL_MS` | `60000` | How often the watchdog checks |
-| `STALL_MS` | `180000` | Silence before an account is restarted |
-| `AUTO_START` | `true` | Resume active accounts on boot |
-| `FARM_ACCOUNTS` | *(empty)* | `token:channelId` pairs re-seeded on boot |
-| `VIEW_TIMEOUT` | `600` | Seconds the stats panel stays clickable |
-| `FARM_COMMANDS` | `pls beg,pls hunt,pls dig,pls bal` | Commands sent each cycle |
-| `DATA_DIR` | `data` | Where JSON state lives |
-| `BRAND_NAME` / `BRAND_TAGLINE` | `DANK FARM` / … | Banner text |
-
----
-
-## Deploying to Render (free)
-
-1. Push this repo to GitHub.
-2. In Render: **New → Blueprint**, point it at the repo. `render.yaml` is
-   picked up automatically.
-3. Set `BOT_TOKEN` and `OWNER_ID` in the dashboard when prompted.
-4. The service binds to `$PORT` and answers `/health`, which the keep-alive
-   server also self-pings so a free instance does not idle-sleep.
-
-A disk is **not** configured in `render.yaml`, because Render's free plan does
-not offer persistent disks. State lives on the ephemeral filesystem at
-`DATA_DIR=data`, so it resets on every redeploy or restart. Set
-`FARM_ACCOUNTS` to re-register the accounts automatically; otherwise re-add them
-with `$add-token` after a deploy. Free instances also sleep after ~15 minutes
-of inactivity; the keep-alive server self-pings every 10 minutes to stay awake,
-but a truly idle instance will still cold-start on the next request.
-
-Prefer Docker? A `Dockerfile` is included, and it mounts a `/data` volume so
-state survives container restarts.
-
-### bot-hosting.net
-
-Free 24/7 hosting. Set the entry file to `main.py` and add `BOT_TOKEN` and
-`OWNER_ID`; the rest of the variables are the same as Render, except set
-`KEEP_ALIVE=false` (the platform reserves the port itself). Full walkthrough:
-[DEPLOY-BOT-HOSTING.md](DEPLOY-BOT-HOSTING.md).
-
----
-
-## Project layout
-
-```
-dankfarm/
-  config.py         environment-driven settings
-  store.py          atomic JSON persistence
-  parsing.py        reply parsing + stats (pure, tested)
-  emojis.py         custom-emoji lookup with unicode fallback
-  banner.py         Pillow banner renderer
-  grinder.py        selfbot lifecycle, farm loop, watchdog
-  ui.py             embed builders
-  bot.py            admin bot: commands + paginated stats views
-  keepalive.py      health server + self-ping
-  upload_emojis.py  one-shot emoji uploader
-tests/run_tests.py  test suite
-```
-
-## Tests
+The bot ships with a dashboard background, help banner, status cards and nine
+animated emojis. Upload the emojis once so the embeds use them:
 
 ```bash
-python tests/run_tests.py      # no extra dependency
-# or
-python -m pytest -q
+npm run upload-emojis
 ```
+
+This uploads `emojis/*` as *application emojis* owned by the bot and writes the
+resulting tags to `storage/emojis.json`. Until you run it, the embeds fall back
+to normal unicode emojis, so nothing ever renders as a broken `:name:`.
+
+## Deploying
+
+**Render (free)** — push the repo, then **New → Blueprint** and point it at the
+repo; `render.yaml` is picked up. Set `BOT_TOKEN`, `OWNER_ID` and
+`FARM_ACCOUNTS` in the dashboard.
+
+**Docker** — `docker build -t dank-farm .` then run it with a volume on `/data`
+so the stats survive a restart.
+
+**Any Node host** — `npm ci --omit=dev && node index.js`.
+
+## Development
+
+```bash
+npm test      # 90+ tests, no network access required
+npm run lint  # syntax check every file
+```
+
+Tests run against a throwaway `DATA_DIR`, so they never touch real storage.
 
 ## License
 
-MIT — see `LICENSE`.
+MIT

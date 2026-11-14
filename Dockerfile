@@ -1,18 +1,19 @@
-FROM python:3.13-slim
+# Persistent state lives on the mounted volume at /data.
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Install deps first so the layer is cached across code changes.
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY package.json package-lock.json* ./
+RUN npm ci --omit=dev || npm install --omit=dev
 
 COPY . .
 
-ENV PYTHONUNBUFFERED=1 \
-    KEEP_ALIVE=true \
-    PORT=10000 \
-    DATA_DIR=/data
+ENV NODE_ENV=production
+ENV DATA_DIR=/data
 VOLUME ["/data"]
-
 EXPOSE 10000
-CMD ["python", "-m", "dankfarm"]
+
+HEALTHCHECK --interval=60s --timeout=5s --start-period=20s \
+    CMD node -e "require('http').get('http://127.0.0.1:'+(process.env.PORT||10000)+'/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+
+CMD ["node", "index.js"]

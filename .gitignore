@@ -1,21 +1,18 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-.pytest_cache/
+node_modules/
+npm-debug.log*
+yarn-error.log*
 
-# Secrets & runtime data
+# Secrets & runtime state — never commit these.
+config.json
+storage/
+sent_commands.log
+stats_export_*.json
 .env
-data/
-*.log
+.env.local
 
-# OS / editor
-.DS_Store
-Thumbs.db
+# Editor / OS
 .vscode/
 .idea/
-
-# tooling
-.ruff_cache/
+.DS_Store
+Thumbs.db
+*.log
