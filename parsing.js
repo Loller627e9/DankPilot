@@ -42,12 +42,31 @@ const EXTRA_ALIASES = {
 // A "miss" is a real outcome, not an error: it is how we count "not caught".
 const MISS = /(?:found|caught|got|brought back|picked up)\s+nothing|nothing\s+while\s+(?:digging|hunting|fishing|searching)|better luck next time/i;
 
+// The success trigger. "brought back" is what marks a catch, so a reply is
+// counted whether or not it also prints a name. The older code only matched a
+// numbered bold line that carried an emoji tag, so a plain reply counted
+// nothing at all.
+const CATCH = /brought back|caught|dug up|obtained|found a\b|picked up/i;
+// The older reply shape, a numbered bold line such as "**1 <:Frog:1> Frog**".
+// It has no trigger word, so it has to be recognised on its own.
+// Both spellings appear in the wild: "**1 <:Frog:1> Frog**" and
+// "**1** <:frog:1> Frog".
+const NUMBERED = /\*\*\d+(?:\*\*)?\s*<a?:[A-Za-z0-9_]+:\d+>/;
+
+// Words that are grammar, not loot. "brought back a <:Frog:1>" used to record
+// the literal name "a", because the article was optional and got swallowed by
+// the name capture.
+const STOPWORDS = new Set(['a', 'an', 'the', 'and', 'or', 'some', 'it', 'them', 'another']);
+
 // Only the text after "brought back" is scanned for a name, so a bold sentence
 // elsewhere in the reply cannot be mistaken for an item.
 const BOLD = /\*\*(.+?)\*\*/g;
 const EMOJI_THEN_NAME = /<a?:[A-Za-z0-9_]+:\d+>\s*([A-Za-z][\w' -]*)/g;
-const BROUGHT_BACK_PLAIN = /brought back\s+(?:a|an)?\s*\**([A-Za-z][\w' -]*)/gi;
-const CAUGHT_PLAIN = /(?:caught|found|dug up|obtained)\s+(?:a|an)\s+\**([A-Za-z][\w' -]*)\**/gi;
+// The article is required here, and the capture is checked against STOPWORDS,
+// so the article itself can never end up as the loot name.
+const AFTER_ARTICLE = /(?:brought back|caught|dug up|obtained|picked up)\s+(?:a|an|the)?\s*\**([A-Za-z][\w' -]*)/gi;
+// Fallback: a custom emoji is named after the loot, e.g. <:Frog:1> -> Frog.
+const EMOJI_NAME = /<a?:([A-Za-z0-9_]+):\d+>/g;
 
 // -- errors ------------------------------------------------------------------
 const FAILURE = /cooldown|you don'?t have|not enough|you can'?t|you need|you'?re too|failed|try again|no luck|you already|nothing to|you have no|are you sure|you must wait|slow down|rate.?limit/i;
@@ -91,6 +110,11 @@ function isFailure(text) {
 
 function isMiss(text) {
     return MISS.test(String(text || ''));
+}
+
+function isCatch(text) {
+    const t = String(text || '');
+    return CATCH.test(t) || NUMBERED.test(t);
 }
 
 function hasBalanceMarkers(text) {
@@ -142,16 +166,16 @@ function parseCoins(content) {
     };
 }
 
-// Collects the loot names from a reply. Scoped to the text after "brought back"
-// when that phrase is present, so unrelated bold text is ignored.
+// Collects the loot names from a reply. Returns [] when the reply names no
+// item, which is not an error: the catch still counts via the trigger.
 function extractNames(text) {
-    const at = text.search(/brought back/i);
+    const at = text.search(/brought back|caught|dug up|obtained|picked up/i);
     const scope = at >= 0 ? text.slice(at) : text;
     const names = [];
 
     const push = (raw) => {
         const name = cleanLootName(raw);
-        if (name) names.push(name);
+        if (name && !STOPWORDS.has(name.toLowerCase())) names.push(name);
     };
 
     for (const match of scope.matchAll(BOLD)) push(match[1]);
@@ -160,22 +184,32 @@ function extractNames(text) {
     for (const match of scope.matchAll(EMOJI_THEN_NAME)) push(match[1]);
     if (names.length) return names;
 
-    for (const match of scope.matchAll(BROUGHT_BACK_PLAIN)) push(match[1]);
+    for (const match of scope.matchAll(AFTER_ARTICLE)) push(match[1]);
     if (names.length) return names;
 
-    for (const match of text.matchAll(CAUGHT_PLAIN)) push(match[1]);
+    // No printed name: fall back to the emoji's own name, which is how a reply
+    // that shows only a picture still reports what was caught.
+    for (const match of scope.matchAll(EMOJI_NAME)) {
+        const name = cleanLootName(match[1]);
+        if (name && !STOPWORDS.has(name.toLowerCase())) names.push(name);
+    }
     return names;
 }
 
 // Returns { animals, items, missed }. `kind` is 'hunt' or 'dig' when the
-// command is known, which decides which counter a name belongs to.
+// command is known, which decides which counter the catch belongs to.
+//
+// The success trigger ("brought back") is what counts a catch. A name is only
+// used to label it, so a reply that prints no name — or only an emoji — still
+// counts instead of being dropped.
 function parseLoot(content, kind) {
     const text = String(content || '');
     if (isMiss(text)) return { animals: [], items: [], missed: true };
     if (isFailure(text)) return { animals: [], items: [], missed: false };
+    if (!isCatch(text)) return { animals: [], items: [], missed: false };
 
-    const names = extractNames(text);
-    if (!names.length) return { animals: [], items: [], missed: false };
+    let names = extractNames(text);
+    if (!names.length) names = ['Unknown'];
 
     let isAnimal;
     if (kind === 'hunt') isAnimal = true;
@@ -192,6 +226,7 @@ module.exports = {
     extractNames,
     isFailure,
     isMiss,
+    isCatch,
     hasBalanceMarkers,
     parseCoins,
     parseBalance,
@@ -201,4 +236,7 @@ module.exports = {
     COIN_MARKER,
     BANK_MARKER,
     MISS,
+    CATCH,
+    NUMBERED,
+    STOPWORDS,
 };

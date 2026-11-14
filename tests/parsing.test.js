@@ -160,3 +160,55 @@ test('cleanLootName drops a leading count and any emoji', () => {
     assert.strictEqual(P.cleanLootName('Frog'), 'Frog');
     assert.strictEqual(P.cleanLootName('1'), '');
 });
+
+// --- the catch trigger does not depend on a name or an emoji ----------------
+// The old code only matched a numbered bold line carrying an emoji tag, so a
+// reply without one counted nothing. These lock in that the trigger alone
+// decides a catch.
+
+test('a reply with no emoji at all still counts', () => {
+    const r = P.parseLoot('You went hunting and brought back a Frog', 'hunt');
+    assert.deepStrictEqual(r.animals, ['Frog']);
+});
+
+test('a reply showing only an emoji still counts', () => {
+    const r = P.parseLoot('You went hunting and brought back a <:Frog:1>', 'hunt');
+    assert.deepStrictEqual(r.animals, ['Frog'], 'falls back to the emoji name');
+});
+
+test('a reply showing only an animated emoji still counts', () => {
+    const r = P.parseLoot('You dug in the dirt and brought back a <a:Rock:2>', 'dig');
+    assert.deepStrictEqual(r.items, ['Rock']);
+});
+
+test('a bolded emoji with no text name still counts', () => {
+    const r = P.parseLoot('You went hunting and brought back a **<:Frog:1>**', 'hunt');
+    assert.deepStrictEqual(r.animals, ['Frog']);
+});
+
+test('the article is never recorded as the loot name', () => {
+    // "brought back a <:Frog:1>" used to record the literal name "a".
+    for (const text of [
+        'You went hunting and brought back a <:Frog:1>',
+        'You went hunting and brought back a **<:Frog:1>**',
+    ]) {
+        const names = P.parseLoot(text, 'hunt').animals;
+        assert.ok(!names.includes('a'), `"a" must not be recorded, got ${JSON.stringify(names)}`);
+    }
+});
+
+test('a catch with no readable name is recorded as Unknown, not dropped', () => {
+    const r = P.parseLoot('You went hunting and brought back.', 'hunt');
+    assert.deepStrictEqual(r.animals, ['Unknown']);
+});
+
+test('the trigger alone counts even when the name is unreadable', () => {
+    const r = P.parseLoot('You went hunting and brought back a ???', 'hunt');
+    assert.strictEqual(r.animals.length, 1, 'the catch is still counted');
+});
+
+test('the stopword list covers the articles', () => {
+    assert.ok(P.STOPWORDS.has('a'), '"a" must be treated as grammar');
+    assert.ok(P.STOPWORDS.has('the'));
+    assert.ok(P.STOPWORDS.has('an'));
+});
