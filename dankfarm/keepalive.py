@@ -32,13 +32,16 @@ async def _health(_request: web.Request) -> web.Response:
 
 async def _self_ping_loop(session, url: str) -> None:
     interval = max(30, config.SELF_PING_MS // 1000)
-    while True:
-        await asyncio.sleep(interval)
-        try:
-            async with session.get(url) as resp:
-                log.debug("Self-ping %s -> %s", url, resp.status)
-        except Exception as exc:  # pragma: no cover - network dependent
-            log.debug("Self-ping failed: %s", exc)
+    try:
+        while True:
+            await asyncio.sleep(interval)
+            try:
+                async with session.get(url) as resp:
+                    log.debug("Self-ping %s -> %s", url, resp.status)
+            except Exception as exc:  # pragma: no cover - network dependent
+                log.debug("Self-ping failed: %s", exc)
+    finally:
+        await session.close()
 
 
 async def start() -> tuple[web.AppRunner | None, asyncio.Task | None]:
@@ -73,6 +76,7 @@ async def start() -> tuple[web.AppRunner | None, asyncio.Task | None]:
 
         session = aiohttp.ClientSession()
         url = config.SELF_URL.rstrip("/") + "/health"
+        # The loop closes the session itself when it is cancelled at shutdown.
         ping_task = asyncio.create_task(_self_ping_loop(session, url))
         log.info("Self-ping enabled -> %s", url)
     return runner, ping_task
