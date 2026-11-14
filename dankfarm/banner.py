@@ -204,6 +204,34 @@ def render_account_card(
     return buf.getvalue()
 
 
+def render_status(kind: str, text: str, *, width: int = 800, height: int = 200) -> bytes | None:
+    """Renders a compact status card for a command reply."""
+    if not _PIL:
+        return None
+
+    ok = kind == "success"
+    accent = (60, 200, 120) if ok else (229, 72, 77)
+    asset = "success_bg.png" if ok else "error_bg.png"
+    img = _background(width, height, (16, 18, 34), (28, 20, 54), asset=asset)
+    draw = ImageDraw.Draw(img)
+    for i in range(4):
+        draw.rectangle([i, i, width - 1 - i, height - 1 - i], outline=accent)
+
+    # A solid colour rail on the left signals success vs error at a glance.
+    draw.rectangle([4, 4, 14, height - 5], fill=accent)
+
+    head_font = _font("bold", 34)
+    body_font = _font("regular", 26)
+    _glow_text(draw, (40, 34), "SUCCESS" if ok else "ERROR", head_font, (255, 255, 255), accent)
+
+    body = _fit(draw, text.replace("\n", "  "), body_font, width - 80)
+    draw.text((40, 104), body, font=body_font, fill=(225, 220, 245))
+
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def render_overview(
     totals: dict,
     *,

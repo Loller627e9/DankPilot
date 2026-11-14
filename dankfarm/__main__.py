@@ -7,7 +7,7 @@ import contextlib
 import logging
 import signal
 
-from . import banner, config, keepalive
+from . import banner, config, keepalive, upload_emojis
 from . import grinder as grinder_mod
 
 logging.basicConfig(
@@ -31,6 +31,14 @@ async def main() -> None:
     log.info("Starting %s v3 ...", config.BRAND_NAME)
     if not banner.available():
         log.warning("Pillow not available — falling back to text-only embeds")
+
+    # The emoji map lives on the (often ephemeral) data volume. Rebuild it from
+    # the application's emojis so a restart cannot leave the UI with broken
+    # custom-emoji placeholders.
+    try:
+        await upload_emojis.ensure_map()
+    except Exception as exc:  # network/API failure must not stop the bot
+        log.warning("Could not recover custom emojis: %s", exc)
 
     runner, ping_task = (None, None)
     if config.KEEP_ALIVE:

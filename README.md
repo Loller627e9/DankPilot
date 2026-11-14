@@ -52,8 +52,31 @@ python -m dankfarm.upload_emojis
 ```
 
 This uploads everything in `emojis/` to your application and writes the
-resulting `<:name:id>` strings to `data/emojis.json`. The UI uses them inside
-your server and falls back to unicode everywhere else.
+resulting `<:name:id>` strings to `data/emojis.json`. The animated GIFs are
+uploaded as **animated** emojis, so the sparkle, coin, paw and tractor icons
+move in the panels.
+
+On every boot the bot also rebuilds the map from your application's emojis. The
+emojis live on Discord's side, so a restart — including on free hosts that wipe
+the working directory — recovers them without re-uploading. Until the map has
+entries the UI uses unicode icons rather than showing a broken `:name:`
+placeholder.
+
+---
+
+## Visuals
+
+Three rendered cards are attached to replies when Pillow is available:
+
+- **Overview / account cards** (`assets/stats_bg.png`, `assets/account_card_bg.png`)
+  — the paginated stats panel.
+- **Help banner** (`assets/help_banner.png`) — attached to `$help`.
+- **Status cards** (`assets/success_bg.png`, `assets/error_bg.png`) — attached to
+  command replies such as `$add-token`, with a green or red rail for success or
+  error.
+
+Every card degrades gracefully: with no Pillow or a missing asset the bot falls
+back to a plain gradient, and then to a text-only embed.
 
 ---
 

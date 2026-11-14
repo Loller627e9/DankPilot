@@ -21,6 +21,46 @@ log = logging.getLogger("dankfarm.emojis")
 API = "https://discord.com/api/v10"
 
 
+async def fetch_map() -> dict[str, str]:
+    """Rebuilds the name -> ``<:name:id>`` map from the application's emojis.
+
+    Application emojis live on Discord's side, so they survive a restart even
+    when the local map does not (free hosts wipe the working directory). This
+    lets the UI recover its custom emojis without re-uploading anything.
+    """
+    mapping: dict[str, str] = {}
+    if not config.BOT_TOKEN:
+        return mapping
+    headers = {"Authorization": f"Bot {config.BOT_TOKEN}"}
+    async with (
+        aiohttp.ClientSession(headers=headers) as session,
+        session.get(f"{API}/applications/@me/emojis") as resp,
+    ):
+        if resp.status != 200:
+            log.warning("Could not list application emojis: %s", resp.status)
+            return mapping
+        for emoji in (await resp.json()).get("items", []):
+            name = emoji.get("name")
+            if name:
+                mapping[name] = f"<{'a' if emoji.get('animated') else ''}:{name}:{emoji['id']}>"
+    return mapping
+
+
+async def ensure_map() -> dict[str, str]:
+    """Populates the local emoji map from Discord when it is missing or empty.
+
+    Returns the map in use. Safe to call on every boot: it is a no-op once the
+    map is populated.
+    """
+    if E._cache:
+        return dict(E._cache)
+    mapping = await fetch_map()
+    if mapping:
+        E.save_custom(mapping)
+        log.info("Recovered %d custom emoji(s) from the application", len(mapping))
+    return mapping
+
+
 async def upload_all() -> dict[str, str]:
     mapping = dict(E._cache)  # keep anything already known
     headers = {"Authorization": f"Bot {config.BOT_TOKEN}"}

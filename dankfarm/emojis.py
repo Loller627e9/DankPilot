@@ -50,6 +50,11 @@ def count_custom() -> int:
     return sum(1 for name in FALLBACK if name in _cache)
 
 
+def has_any() -> bool:
+    """True when at least one custom emoji has been uploaded."""
+    return bool(_cache)
+
+
 def save_custom(mapping: dict[str, str]) -> bool:
     global _cache
     _cache = dict(mapping)

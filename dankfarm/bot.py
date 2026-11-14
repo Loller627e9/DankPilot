@@ -14,7 +14,7 @@ import logging
 import disnake
 from disnake.ext import commands
 
-from . import banner, config, store, ui
+from . import banner, config, emojis, store, ui
 
 log = logging.getLogger("dankfarm.bot")
 
@@ -183,7 +183,10 @@ class DankFarmBot(commands.Bot):
         intents.message_content = True
         super().__init__(command_prefix=config.COMMAND_PREFIX, intents=intents)
         self.grinder = grinder
-        self.use_custom = True
+        # Only use the custom-emoji strings when the map is actually populated;
+        # otherwise the embed would render a broken ":name:" placeholder. With
+        # no map we fall back to the unicode icons.
+        self.use_custom = emojis.has_any()
 
     # -- lifecycle ------------------------------------------------------------
     async def on_ready(self) -> None:
@@ -196,7 +199,8 @@ class DankFarmBot(commands.Bot):
         if message.author.bot or not message.content.startswith(config.COMMAND_PREFIX):
             return
         if not has_permission(message.author.id):
-            await message.reply(embed=ui.status_embed("error", "You do not have permission to use this bot.", True))
+            embed = ui.status_embed("error", "You do not have permission to use this bot.", self.use_custom)
+            await message.reply(embed=embed)
             return
         try:
             await self._handle(message)
@@ -213,10 +217,22 @@ class DankFarmBot(commands.Bot):
         prefix = config.COMMAND_PREFIX
 
         async def reply(kind: str, text: str) -> None:
-            await message.reply(embed=ui.status_embed(kind, text, True))
+            # Attach a rendered status card when Pillow is available; otherwise
+            # fall back to the plain embed so the reply still works.
+            file = None
+            if banner.available():
+                png = banner.render_status(kind, text)
+                if png:
+                    file = disnake.File(io.BytesIO(png), filename="status.png")
+            embed = ui.status_embed(kind, text, self.use_custom)
+            if file:
+                embed.set_image(url="attachment://status.png")
+                await message.reply(embed=embed, file=file)
+            else:
+                await message.reply(embed=embed)
 
         if cmd == "help":
-            await message.reply(embed=ui.help_embed(True))
+            await self._send_help(message)
         elif cmd == "stats":
             await self._send_stats(message)
         elif cmd == "ping":
@@ -246,6 +262,19 @@ class DankFarmBot(commands.Bot):
             await self._cmd_access(cmd, args, prefix, reply)
         else:
             await reply("error", f"Unknown command. Use `{prefix}help`.")
+
+    async def _send_help(self, message: disnake.Message) -> None:
+        embed = ui.help_embed(self.use_custom)
+        file = None
+        if banner.available():
+            png = banner.render_banner()
+            if png:
+                file = disnake.File(io.BytesIO(png), filename="help.png")
+                embed.set_image(url="attachment://help.png")
+        if file:
+            await message.reply(embed=embed, file=file)
+        else:
+            await message.reply(embed=embed)
 
     async def _send_stats(self, message: disnake.Message) -> None:
         view = StatsView(self, message.author.id)
@@ -317,7 +346,7 @@ class DankFarmBot(commands.Bot):
 
     @commands.slash_command(description="Show the command list")
     async def help(self, inter: disnake.ApplicationCommandInteraction) -> None:
-        await inter.response.send_message(embed=ui.help_embed(True))
+        await inter.response.send_message(embed=ui.help_embed(self.use_custom))
 
 
 async def run(grinder) -> None:

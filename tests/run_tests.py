@@ -487,6 +487,38 @@ def test_banner() -> None:
     check("banner: account card renders", isinstance(card, bytes) and len(card) > 1000, "")
     overview = banner.render_overview({"coins": 10, "animals": 1, "items": 1, "commands": 5}, accounts=2, running=1)
     check("banner: overview renders", isinstance(overview, bytes) and len(overview) > 1000, "")
+    ok = banner.render_status("success", "Verified and added as #2")
+    check("banner: success status card renders", isinstance(ok, bytes) and len(ok) > 1000, "")
+    err = banner.render_status("error", "Login failed — not saved")
+    check("banner: error status card renders", isinstance(err, bytes) and len(err) > 1000, "")
+
+
+def test_emoji_recovery() -> None:
+    """The emoji map is rebuilt from the application when the local file is gone."""
+    import asyncio
+
+    from dankfarm import emojis as E
+    from dankfarm import upload_emojis as U
+
+    saved = dict(E._cache)
+    try:
+        E._cache = {}
+        check("emoji: has_any false when empty", not E.has_any())
+
+        async def fake_fetch() -> dict[str, str]:
+            return {"dk_coin": "<:dk_coin:111>"}
+
+        original = U.fetch_map
+        U.fetch_map = fake_fetch
+        try:
+            mapping = asyncio.run(U.ensure_map())
+        finally:
+            U.fetch_map = original
+        eq("emoji: recovered from application", mapping, {"dk_coin": "<:dk_coin:111>"})
+        check("emoji: has_any true after recovery", E.has_any())
+        eq("emoji: custom string used", E.get("dk_coin", True), "<:dk_coin:111>")
+    finally:
+        E._cache = saved
 
 
 def test_branding() -> None:
@@ -519,6 +551,7 @@ def main() -> int:
         test_remove_token_drops_stats,
         test_grinder_bad_login,
         test_banner,
+        test_emoji_recovery,
         test_branding,
     ]
     for test in tests:
