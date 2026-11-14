@@ -1,4 +1,3 @@
-const fs = require('fs');
 const path = require('path');
 const config = require('./config');
 const store = require('./store');
@@ -68,7 +67,7 @@ async function handleCommand(message) {
                 return message.reply(ui.helpPayload(useCustom));
 
             case 'stats':
-                return message.reply(ui.statsPayload(grinder.getAllStats(), loadTokens(), useCustom));
+                return message.reply(ui.statsPayload(grinder.getAllStats(), loadTokens(), useCustom, grinder.getActiveTokens()));
 
             case 'ping': {
                 const latency = Math.max(0, Date.now() - message.createdTimestamp);
@@ -83,13 +82,22 @@ async function handleCommand(message) {
                 if (!/^\d{16,20}$/.test(channelId)) {
                     return message.reply(error('Channel ID must be a numeric Discord channel ID.', useCustom));
                 }
+                // Reject bad tokens up front instead of registering something that
+                // will silently fail to log in on every start.
+                const check = await grinder.validateToken(token);
+                if (!check.ok) {
+                    return message.reply(error(`That token is invalid (${check.error}).`, useCustom));
+                }
                 if (!grinder.addToken(token, channelId)) {
                     return message.reply(error('That token is already registered.', useCustom));
                 }
-                const login = await grinder.startClient(token, channelId);
-                return message.reply(login.ok
-                    ? success(`Added and logged in \`${grinder.maskToken(token)}\``, useCustom)
-                    : error(`Added, but login failed for \`${grinder.maskToken(token)}\``, useCustom));
+                // Added inactive on purpose: activating is a separate, explicit step.
+                const index = loadTokens().tokens.findIndex(t => t.token === token);
+                return message.reply(success(
+                    `Added **${check.user.username}** as **#${index}** (inactive).\n` +
+                    `Start it with \`${PREFIX}toggle ${index}\` or \`${PREFIX}start-all\`.`,
+                    useCustom
+                ));
             }
 
             case 'remove-token': {
@@ -104,20 +112,25 @@ async function handleCommand(message) {
             case 'toggle': {
                 const index = requireIndex(args[0]);
                 if (index === null) return message.reply(error('Usage: `toggle <index>`', useCustom));
-                const data = loadTokens();
-                const entry = data.tokens[index];
+                const entry = loadTokens().tokens[index];
                 if (!entry) return message.reply(error(`No account at index ${index}.`, useCustom));
 
-                const nowActive = !entry.active;
-                const ok = await grinder.toggleToken(index);
-                if (!ok) return message.reply(error('Failed to toggle account.', useCustom));
-                return message.reply(nowActive
-                    ? success(`Activated \`${grinder.maskToken(entry.token)}\``, useCustom)
-                    : success(`Deactivated \`${grinder.maskToken(entry.token)}\``, useCustom));
+                const res = await grinder.toggleToken(index);
+                if (!res.ok) {
+                    return message.reply(error(
+                        res.error
+                            ? `Could not start \`${grinder.maskToken(entry.token)}\`: ${res.error}`
+                            : 'Failed to toggle account.',
+                        useCustom
+                    ));
+                }
+                return message.reply(res.active
+                    ? success(`Activated \`${grinder.maskToken(entry.token)}\` (#${index}) — now farming.`, useCustom)
+                    : success(`Deactivated \`${grinder.maskToken(entry.token)}\` (#${index}) — stopped.`, useCustom));
             }
 
             case 'start-all': {
-                const count = await grinder.startAllClients(message);
+                const count = await grinder.startAllClients();
                 return message.reply(success(`Started ${count} farming client(s).`, useCustom));
             }
 

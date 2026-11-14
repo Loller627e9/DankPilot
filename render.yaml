@@ -23,3 +23,15 @@ services:
         value: "3000"
       - key: CYCLE_INTERVAL
         value: "45000"
+      - key: FARM_COMMANDS
+        value: "pls beg,pls hunt,pls dig,pls bal"
+      - key: DEBUG_STATS
+        value: "false"
+      - key: COMMAND_JITTER
+        value: "1500"
+      - key: CYCLE_JITTER
+        value: "15000"
+      - key: WATCHDOG_INTERVAL
+        value: "60000"
+      - key: STALL_MS
+        value: "90000"

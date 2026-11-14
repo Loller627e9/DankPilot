@@ -63,6 +63,32 @@ const config = {
     commandInterval: toInt(process.env.COMMAND_INTERVAL, 3000),
     cycleInterval: toInt(process.env.CYCLE_INTERVAL, 45000),
 
+    // Random extra delay added on top of each interval. A perfectly regular
+    // cadence is both a bot signal and easy to rate-limit, so spread it out.
+    commandJitter: toInt(process.env.COMMAND_JITTER, 1500),
+    cycleJitter: toInt(process.env.CYCLE_JITTER, 15000),
+
+    // Liveness watchdog: how often to check clients, and how long a client may
+    // stay disconnected before it is torn down and restarted.
+    watchdogInterval: toInt(process.env.WATCHDOG_INTERVAL, 60000),
+    stallMs: toInt(process.env.STALL_MS, 90000),
+
+    // Login retry/backoff.
+    loginRetries: toInt(process.env.LOGIN_RETRIES, 3),
+    maxBackoff: toInt(process.env.MAX_BACKOFF, 300000),
+
+    // Discord client identity sent on IDENTIFY. The library pins an old build
+    // number; override it here so the session does not look stale.
+    clientBuildNumber: toInt(process.env.CLIENT_BUILD_NUMBER, 455964),
+    clientVersion: process.env.CLIENT_VERSION || '1.0.9210',
+
+    // Commands sent each cycle, in order. Response parsing keys off the command
+    // name, so keep "bal" (coins), "hunt" (animals) and "dig" (items).
+    farmCommands: (process.env.FARM_COMMANDS || 'pls beg,pls hunt,pls dig,pls bal')
+        .split(',')
+        .map(s => s.trim())
+        .filter(Boolean),
+
     // Keep-alive web server so a Render free Web Service does not idle-sleep.
     keepAlive: process.env.KEEP_ALIVE !== 'false',
     port: toInt(process.env.PORT, 3000),
