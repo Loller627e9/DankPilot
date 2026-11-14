@@ -146,10 +146,24 @@ def parse_loot(content: str, kind: str | None = None) -> dict[str, list[str]]:
             if name:
                 names.append(name)
 
+    # Last-resort safety net, ported from the old bot: if the reply clearly says
+    # something was caught or found but the name format was not recognised, still
+    # count it once so a format change cannot silently zero the totals.
+    forced: str | None = None
+    if not names:
+        if re.search(r"caught a", text, re.IGNORECASE):
+            names, forced = ["Unknown Animal"], "animal"
+        elif re.search(r"found a", text, re.IGNORECASE):
+            names, forced = ["Unknown Item"], "item"
+
     if not names:
         return {"animals": [], "items": []}
 
-    if kind in {"hunt", "dig"}:
+    if forced == "animal":
+        is_animal = True
+    elif forced == "item":
+        is_animal = False
+    elif kind in {"hunt", "dig"}:
         is_animal = kind == "hunt"
     else:
         is_animal = bool(re.search(r"caught|hunting|hunt", text, re.IGNORECASE))
@@ -203,16 +217,18 @@ def apply_stats(token: str, kind: str, content: str) -> dict | None:
         store.save_stats(data)
         return entry
 
-    # The old working bot looked for a balance on every reply, not only on
-    # `pls bal`, so a beg/work reply that shows the wallet still counts.
-    coins = parse_coins(content)
-    total = coins["wallet"] + coins["bank"]
-    if total > entry.get("lastTotal", 0):
-        # High-water mark: coins earned is the highest balance ever seen. The
-        # mark only ever rises, so spending (which lowers the balance) cannot
-        # make a later rise re-count coins that were already tallied.
-        entry["coins"] = entry.get("coins", 0) + (total - entry.get("lastTotal", 0))
-        entry["lastTotal"] = total
+    # Faithful to the old working bot: a balance is only counted when the reply
+    # carries both the Coin and the Bank marker, so an unrelated coin figure in
+    # some other embed cannot inflate the total.
+    if "<:Coin:" in content and "<:Bank:" in content:
+        coins = parse_coins(content)
+        total = coins["wallet"] + coins["bank"]
+        if total > entry.get("lastTotal", 0):
+            # High-water mark: coins earned is the highest balance ever seen. The
+            # mark only ever rises, so spending (which lowers the balance) cannot
+            # make a later rise re-count coins that were already tallied.
+            entry["coins"] = entry.get("coins", 0) + (total - entry.get("lastTotal", 0))
+            entry["lastTotal"] = total
 
     if kind == "hunt":
         animals = parse_loot(content, "hunt")["animals"]

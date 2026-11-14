@@ -107,12 +107,15 @@ accounts to resume on boot.
 Dank Memer sends its results inside an **embed**, and `message.content` is
 usually empty — so the bot flattens the embed (description, title, and every
 field) before parsing. Both the custom-emoji shape (`**1 <:Frog:123> Frog`) and
-the spaced shape (`**1** <:Frog:123> Frog`) are recognised. Stats are
-attributed by command:
+the spaced shape (`**1** <:Frog:123> Frog`) are recognised. A reply is only
+counted when it is a reply to the command the bot just sent, so unrelated Dank
+Memer posts (drops, events) are ignored. Stats are attributed by command:
 
-- `pls bal` sets the coin high-water mark, so spending never lowers lifetime earnings.
-- Any reply that shows a Coin/Bank figure raises the total (a `beg` reply counts too).
-- `pls hunt` / `pls dig` / `pls search` / `pls fish` add to animals or items.
+- A reply that carries both a Coin and a Bank marker sets the balance; the coin
+  total tracks the high-water mark, so spending never lowers lifetime earnings.
+- `pls hunt` / `pls dig` add to animals or items.
+- If a loot reply clearly says something was caught or found but the name format
+  was not recognised, it still counts once rather than silently reading as zero.
 - Cooldown and refusal replies ("you're on a cooldown") count as failures and
   never inflate the totals.
 
@@ -128,8 +131,8 @@ The important ones:
 | `BOT_TOKEN` | — | Admin bot token (required) |
 | `OWNER_ID` | — | Your user ID (required) |
 | `COMMAND_PREFIX` | `$` | Text command prefix |
-| `COMMAND_INTERVAL` | `4000` | Delay between commands (ms) |
-| `CYCLE_INTERVAL` | `65000` | Delay between cycles (ms) |
+| `COMMAND_INTERVAL` | `3000` | Delay between commands (ms) |
+| `CYCLE_INTERVAL` | `45000` | Delay between cycles (ms) |
 | `COMMAND_JITTER` / `CYCLE_JITTER` | `1500` / `20000` | Random spread (ms) |
 | `WATCHDOG_INTERVAL_MS` | `60000` | How often the watchdog checks |
 | `STALL_MS` | `180000` | Silence before an account is restarted |

@@ -18,9 +18,9 @@ services:
       - key: DATA_DIR
         value: data
       - key: COMMAND_INTERVAL
-        value: "4000"
+        value: "3000"
       - key: CYCLE_INTERVAL
-        value: "65000"
+        value: "45000"
       - key: COMMAND_JITTER
         value: "1500"
       - key: CYCLE_JITTER

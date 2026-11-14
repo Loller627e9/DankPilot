@@ -113,24 +113,27 @@ def test_failures_not_counted() -> None:
 
 
 def test_coin_gain_recorded() -> None:
-    """A reply that shows the wallet must raise the coin total.
+    """A balance reply must raise the coin total.
 
-    This mirrors the old working bot: every reply is scanned for a Coin/Bank
-    line, and the total is tracked as a high-water mark so spending never lowers
-    lifetime earnings.
+    This mirrors the old working bot: a balance is counted only when the reply
+    carries both the Coin and the Bank marker, and the total is tracked as a
+    high-water mark so spending never lowers lifetime earnings.
     """
     token = "coin-tok"
     parsing.initialize_stats(token, "T")
-    entry = parsing.apply_stats(token, "coin", "<:Coin:1> 500\n<:Bank:2> 0")
+    entry = parsing.apply_stats(token, "balance", "<:Coin:1> 500\n<:Bank:2> 0")
     eq("coin: gain recorded", entry["coins"], 500)
-    entry = parsing.apply_stats(token, "coin", "<:Coin:1> 1,750\n<:Bank:2> 0")
+    entry = parsing.apply_stats(token, "balance", "<:Coin:1> 1,750\n<:Bank:2> 0")
     eq("coin: second gain added", entry["coins"], 1750)
     # Spending must not lower the lifetime total.
     entry = parsing.apply_stats(token, "balance", "<:Coin:1> 900\n<:Bank:2> 0")
     eq("coin: spending does not lower total", entry["coins"], 1750)
-    # A beg reply that shows the wallet counts even though it is not `pls bal`.
-    entry = parsing.apply_stats(token, "coin", "You begged and got some coins!\n<:Coin:1> 2,000")
-    eq("coin: beg reply with wallet counts", entry["coins"], 2000)
+    # A wallet-only reply (no Bank marker) is not a balance and must be ignored.
+    entry = parsing.apply_stats(token, "coin", "You got <:Coin:1> 9,999 coins!")
+    eq("coin: wallet-only reply ignored", entry["coins"], 1750)
+    # But a real balance check with both markers still counts.
+    entry = parsing.apply_stats(token, "balance", "<:Coin:1> 2,000\n<:Bank:2> 0")
+    eq("coin: balance with both markers counts", entry["coins"], 2000)
 
 
 def test_extract_reply_text() -> None:
@@ -169,6 +172,66 @@ def test_extract_reply_text() -> None:
     eq("embed: plain content", parsing.extract_reply_text(_Plain()), "hi")
 
 
+def test_loot_fallback_unknown() -> None:
+    """An unrecognised 'caught a' / 'found a' reply must still count once."""
+    eq("loot fallback: caught a", parsing.parse_loot("You caught a", "hunt")["animals"],
+       ["Unknown Animal"])
+    eq("loot fallback: found a", parsing.parse_loot("You found a", "dig")["items"],
+       ["Unknown Item"])
+    # A cooldown is still a failure, never a fallback catch.
+    eq("loot fallback: failure excluded",
+       parsing.parse_loot("You caught a cooldown!", "hunt"), {"animals": [], "items": []})
+
+
+def test_reply_reference_gate() -> None:
+    """Only a reply to our own command may be parsed (old-bot behaviour)."""
+    import asyncio
+
+    from dankfarm import grinder as G
+
+    store.save_tokens({"tokens": [
+        {"token": "ref-tok", "channelId": "1", "active": True, "verified": True},
+    ]})
+    parsing.initialize_stats("ref-tok", "Ref")
+
+    class _Embed:
+        title = None
+        description = "You caught a **Frog**!"
+        author = None
+        footer = None
+        fields: tuple = ()
+
+    class _Ref:
+        def __init__(self, mid):
+            self.message_id = mid
+
+    class _Msg:
+        def __init__(self, mid, ref):
+            self.id = mid
+            self.content = ""
+            self.embeds = (_Embed(),)
+            self.reference = ref
+            self.author = type("A", (), {"id": G.DANK_MEMER_ID})()
+            self.channel = type("C", (), {"id": 1})()
+
+    async def run():
+        grinder = G.Grinder()
+        account = G.FarmAccount("ref-tok", 1, grinder)
+        grinder.last_sent["ref-tok"] = {"id": 100, "command": "pls hunt"}
+
+        # Reply to a *different* message must be ignored.
+        await account._on_message(_Msg(101, _Ref(999)))
+        eq("ref gate: unrelated reply ignored",
+           store.load_stats()["stats"]["ref-tok"]["animals"], 0)
+
+        # Reply to our own command is counted.
+        await account._on_message(_Msg(102, _Ref(100)))
+        eq("ref gate: own reply counted",
+           store.load_stats()["stats"]["ref-tok"]["animals"], 1)
+
+    asyncio.run(run())
+
+
 def test_permission_ids() -> None:
     """grant() stores a string id; has_permission must still match it."""
     from dankfarm import bot as bot_mod
@@ -182,8 +245,8 @@ def test_permission_ids() -> None:
 def test_apply_stats() -> None:
     token = "token-abc"
     parsing.initialize_stats(token, "Tester")
-    parsing.apply_stats(token, "balance", "Wallet: 100\nBank: 900")
-    entry = parsing.apply_stats(token, "balance", "Wallet: 50\nBank: 900")
+    parsing.apply_stats(token, "balance", "<:Coin:1> 100\n<:Bank:2> 900")
+    entry = parsing.apply_stats(token, "balance", "<:Coin:1> 50\n<:Bank:2> 900")
     # Spending must not reduce lifetime earnings (high-water mark logic).
     eq("stats: coins high-water", entry["coins"], 1000)
     parsing.apply_stats(token, "hunt", "You caught: **1** 🐸 Frog, **2** 🐍 Snake")
@@ -431,6 +494,8 @@ def main() -> int:
         test_extract_reply_text,
         test_view_navigation,
         test_auto_start_default_off,
+        test_loot_fallback_unknown,
+        test_reply_reference_gate,
         test_permission_ids,
         test_apply_stats,
         test_emojis,

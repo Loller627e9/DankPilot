@@ -99,12 +99,20 @@ class FarmAccount:
         last = self.grinder.last_sent.get(self.token)
         if not last or message.id <= last["id"]:
             return
+        # The old working bot only counted a message that was a reply to the
+        # command it just sent, which keeps unrelated Dank Memer posts (drops,
+        # events) from being parsed as results. When the reference is exposed,
+        # enforce it; otherwise fall back to the "newer than our message" check.
+        reference = getattr(message, "reference", None)
+        if reference is not None:
+            target = getattr(reference, "message_id", None)
+            if target is not None and target != last["id"]:
+                return
         # The reply text lives in the embed, not in message.content, so flatten
         # the whole message before parsing it.
         text = parsing.extract_reply_text(message)
         kind = parsing.classify_reply(last["command"], text)
         parsing.apply_stats(self.token, kind, text)
-        self.grinder.last_reply[self.token] = kind
 
     # -- farming --------------------------------------------------------------
     def _start_cycle(self) -> None:
@@ -175,7 +183,6 @@ class Grinder:
         self._locks: dict[str, asyncio.Lock] = {}
         self._restart_attempts: dict[str, int] = {}
         self.last_sent: dict[str, dict] = {}
-        self.last_reply: dict[str, str] = {}
         self._watchdog: asyncio.Task | None = None
         self._stopping = False
         # Keeps strong references to fire-and-forget tasks so the GC cannot
@@ -311,6 +318,9 @@ class Grinder:
         for entry in self.verified_entries():
             res = await self.start(entry["token"], int(entry["channelId"]))
             if res.get("ok"):
+                # Mark it wanted, otherwise the watchdog would not resurrect it
+                # after a drop and AUTO_START would not resume it on the next boot.
+                self._set_active(entry["token"], True)
                 started += 1
         return started
 

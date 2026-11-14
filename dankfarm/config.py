@@ -65,8 +65,8 @@ OWNER_ID = _env_int("OWNER_ID", 0)
 COMMAND_PREFIX = _env("COMMAND_PREFIX", "$")
 
 # --- Farming cadence (milliseconds) -----------------------------------------
-COMMAND_INTERVAL = _env_int("COMMAND_INTERVAL", 4000)
-CYCLE_INTERVAL = _env_int("CYCLE_INTERVAL", 65000)
+COMMAND_INTERVAL = _env_int("COMMAND_INTERVAL", 3000)
+CYCLE_INTERVAL = _env_int("CYCLE_INTERVAL", 45000)
 COMMAND_JITTER = _env_int("COMMAND_JITTER", 1500)
 CYCLE_JITTER = _env_int("CYCLE_JITTER", 20000)
 
