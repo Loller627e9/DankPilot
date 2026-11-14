@@ -38,9 +38,14 @@ const config = {
 
     commandInterval: number('COMMAND_INTERVAL', 3000),
     cycleInterval: number('CYCLE_INTERVAL', 45000),
-    commands: (pick('FARM_COMMANDS', 'commands') || 'pls beg,pls hunt,pls dig,pls bal')
+    commands: String(pick('FARM_COMMANDS', 'commands') || 'pls beg,pls hunt,pls dig,pls bal')
         .split(',')
         .map(c => c.trim())
+        .filter(Boolean),
+    // Extra ids treated as Dank Memer, in case a reply arrives from a second id.
+    extraBotIds: String(pick('EXTRA_BOT_IDS', 'extraBotIds') || '')
+        .split(',')
+        .map(s => s.trim())
         .filter(Boolean),
 
     // Accounts re-registered on every boot, as "token:channelId" pairs. Free

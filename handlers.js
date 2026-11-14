@@ -145,6 +145,30 @@ async function handleCommand(message) {
                     : status(message, 'error', 'Failed to revoke.');
             }
 
+            case 'debug': {
+                // Shows what the bot is actually receiving. When tracking reads
+                // nothing, this is the first place to look.
+                const lines = [];
+                lines.push('**Accounts**');
+                for (const a of grinder.accountStatus()) {
+                    lines.push(`• ${a.label} — ${a.ready ? 'ready' : 'not ready'}, pending ${a.pending}, idle ${Math.round(a.idleMs / 1000)}s`);
+                }
+                const recent = grinder.recentInbound(3);
+                lines.push('');
+                lines.push(`**Last ${recent.length} inbound message(s)**`);
+                if (!recent.length) {
+                    lines.push('• none recorded yet — the bot has not seen a message in the farm channel');
+                }
+                for (const m of recent) {
+                    lines.push(`• from \`${m.authorName || m.authorId}\`${m.webhookId ? ' (webhook)' : ''} ref=${m.reference || '-'}`);
+                    lines.push(`  text: ${JSON.stringify((m.text || '').slice(0, 200))}`);
+                    if (m.emojis && m.emojis.length) {
+                        lines.push(`  emojis: ${m.emojis.map(e => `${e.animated ? 'animated ' : ''}${e.name}`).join(', ')}`);
+                    }
+                }
+                return reply(message, { content: lines.join('\n').slice(0, 1900) });
+            }
+
             case 'reset-stats': {
                 const ok = require('./stats').resetStats();
                 return ok

@@ -53,6 +53,12 @@ function recordFailure(token) {
     store.saveStats(data);
 }
 
+// A read-only copy of one account's counters, for before/after logging.
+function snapshot(token) {
+    const entry = store.loadStats().stats[token];
+    return entry ? Object.assign({}, entry) : {};
+}
+
 // Folds one Dank Memer reply into the token's totals. `kind` is 'hunt'/'dig'
 // when the command is known, otherwise the reply wording decides.
 function applyReply(token, kind, content) {
@@ -143,6 +149,7 @@ module.exports = {
     recordCommand,
     recordFailure,
     applyReply,
+    snapshot,
     resetStats,
     exportStats,
     getAllStats,

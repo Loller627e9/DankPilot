@@ -193,7 +193,8 @@ function helpPayload() {
             { name: `${E.dk_cmds} Accounts`, value: `\`${p}add-token <token> <channelId>\`\n\`${p}remove-token <index>\`\n\`${p}toggle <index>\`` },
             { name: `${E.dk_farm} Control`, value: `\`${p}start-all\`  \`${p}stop-all\`` },
             { name: `${E.dk_paw} Access`, value: `\`${p}grant <@user>\`  \`${p}revoke <@user>\`` },
-            { name: `${E.dk_gift} Data`, value: `\`${p}reset-stats\`  \`${p}export-stats\`` }
+            { name: `${E.dk_gift} Data`, value: `\`${p}reset-stats\`  \`${p}export-stats\`` },
+            { name: `${E.dk_paw} Diagnostics`, value: `\`${p}debug\` — what the bot is actually receiving` }
         )
         .setFooter({ text: `Prefix: ${p}` })
         .setTimestamp();

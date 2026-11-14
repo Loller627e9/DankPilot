@@ -28,6 +28,7 @@ function load() {
         store: require('../store'),
         stats: require('../stats'),
         parsing: require('../parsing'),
+        reader: require('../reader'),
         ui: require('../ui'),
         panel: require('../panel'),
         emojis: require('../emojis'),

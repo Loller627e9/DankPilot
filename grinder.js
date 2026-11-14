@@ -10,8 +10,9 @@ const config = require('./config');
 const store = require('./store');
 const stats = require('./stats');
 const parsing = require('./parsing');
+const reader = require('./reader');
 
-const DANK_MEMER_ID = '270904126974590976';
+const DANK_MEMER_ID = reader.DANK_MEMER_ID;
 const LOG_PATH = path.join(__dirname, 'sent_commands.log');
 
 // token -> { client, channelId, timer, pending: Map<messageId, command> }
@@ -125,37 +126,29 @@ function isActionable(text) {
 function bindMessageHandler(token, channelId, client) {
     client.on('messageCreate', async (message) => {
         try {
-            if (!message || !message.author || message.author.id !== DANK_MEMER_ID) return;
-            if (!message.channel || String(message.channel.id) !== String(channelId)) return;
+            if (!message || !message.channel) return;
+            // Everything in the channel is described and logged, not only what
+            // looks like a reply. When tracking reads nothing, this log is the
+            // only way to see what actually arrived.
+            if (String(message.channel.id) !== String(channelId)) return;
+            if (!message.author || message.author.id === (client.user && client.user.id)) return;
 
             const acct = accounts.get(token);
             if (!acct) return;
 
-            const refId = message.reference && message.reference.messageId;
-            const text = parsing.extractReplyText(message);
-            let command;
+            const snapshot = reader.describe(message);
+            reader.record(snapshot);
+            log(`[${acct.label}] <- ${reader.authorKind(message)} ref=${snapshot.reference || '-'} ${JSON.stringify(snapshot.text.slice(0, 300))}`);
 
-            if (refId) {
-                // A reply to something we did not send is not ours to record.
-                // The original fetched the referenced message to check the
-                // author, which cost an API call and could throw.
-                if (!acct.pending.has(refId)) return;
-                command = acct.pending.get(refId);
-                acct.pending.delete(refId);
-            } else {
-                // No reference on this build. Take the oldest unanswered
-                // command, but only if this message actually carries a result —
-                // otherwise an unrelated bot message would consume the slot and
-                // the real reply would then be dropped.
-                if (!isActionable(text)) return;
-                const first = acct.pending.keys().next();
-                if (first.done) return;
-                command = acct.pending.get(first.value);
-                acct.pending.delete(first.value);
-            }
+            const hit = reader.attribute(acct, message);
+            if (!hit) return;
 
-            const kind = classifyReply(command, text);
-            stats.applyReply(token, kind, text);
+            acct.pending.delete(hit.key);
+            const kind = classifyReply(hit.command, snapshot.text);
+            const before = stats.snapshot(token);
+            stats.applyReply(token, kind, snapshot.text);
+            const after = stats.snapshot(token);
+            log(`[${acct.label}] matched "${hit.command}" via ${hit.reason} as ${kind}: ${describeDelta(before, after)}`);
             acct.lastActivity = Date.now();
         } catch (err) {
             // A handler error must never take the account down.
@@ -164,13 +157,48 @@ function bindMessageHandler(token, channelId, client) {
     });
 }
 
+// A one-line summary of what a reply changed, so the log shows whether a read
+// landed. Returns "no change" when the numbers were untouched.
+function describeDelta(before, after) {
+    const keys = ['coins', 'animals', 'items', 'catches', 'misses', 'failures'];
+    const changed = keys.filter((k) => (before[k] || 0) !== (after[k] || 0))
+        .map((k) => `${k} ${before[k] || 0}->${after[k] || 0}`);
+    return changed.length ? changed.join(' ') : 'no change';
+}
+
+// -- diagnostics -------------------------------------------------------------
+// The last N inbound messages, newest first, for the debug command.
+function recentInbound(limit) {
+    try {
+        const raw = fs.readFileSync(reader.INBOUND_LOG, 'utf8');
+        const lines = raw.split('\n').filter(Boolean);
+        return lines.slice(-limit).reverse().map((line) => JSON.parse(line));
+    } catch {
+        return [];
+    }
+}
+
+// What each account is waiting on and how long since it heard anything.
+function accountStatus() {
+    const out = [];
+    for (const [token, acct] of accounts) {
+        out.push({
+            label: acct.label,
+            ready: !!acct.ready,
+            pending: acct.pending.size,
+            idleMs: Date.now() - (acct.lastActivity || 0),
+        });
+    }
+    return out;
+}
+
 // -- start / stop -----------------------------------------------------------
 async function startClient(token, channelId) {
     if (accounts.has(token)) return false;
     if (!token || !channelId) return false;
 
     const client = new Client({ checkUpdate: false, readyStatus: false, syncStatus: false });
-    const record = { client, channelId: String(channelId), timer: null, pending: new Map(), lastActivity: Date.now(), ready: false };
+    const record = { client, channelId: String(channelId), timer: null, pending: new Map(), lastActivity: Date.now(), ready: false, label: maskToken(token) };
     accounts.set(token, record);
 
     bindMessageHandler(token, record.channelId, client);
@@ -178,6 +206,7 @@ async function startClient(token, channelId) {
 
     client.on('ready', () => {
         record.ready = true;
+        record.label = client.user ? (client.user.username || maskToken(token)) : maskToken(token);
         record.lastActivity = Date.now();
         log(`Logged in as ${client.user ? client.user.tag || client.user.username : 'unknown'} (${maskToken(token)})`);
         stats.ensure(token, client.user ? client.user.username : undefined);
@@ -349,6 +378,8 @@ module.exports = {
     maskToken,
     shutdown,
     DANK_MEMER_ID,
+    recentInbound,
+    accountStatus,
     isActionable,
     _accounts: accounts,
     _bindDropRecovery: bindDropRecovery,

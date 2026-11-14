@@ -28,3 +28,6 @@ services:
       # accounts so farming resumes by itself.
       - key: FARM_ACCOUNTS
         sync: false
+      # Optional: extra ids to treat as Dank Memer.
+      - key: EXTRA_BOT_IDS
+        sync: false

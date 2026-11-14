@@ -6,6 +6,7 @@ yarn-error.log*
 config.json
 storage/
 sent_commands.log
+inbound.jsonl
 stats_export_*.json
 .env
 .env.local
