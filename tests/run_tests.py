@@ -217,16 +217,29 @@ def test_reply_reference_gate() -> None:
     async def run():
         grinder = G.Grinder()
         account = G.FarmAccount("ref-tok", 1, grinder)
-        grinder.last_sent["ref-tok"] = {"id": 100, "command": "pls hunt"}
+        # Two commands in flight at once: the reply to the first arrives only
+        # after the second was already sent (the real-world slow-reply case).
+        grinder.pending["ref-tok"] = {100: "pls hunt", 200: "pls dig"}
 
         # Reply to a *different* message must be ignored.
         await account._on_message(_Msg(101, _Ref(999)))
         eq("ref gate: unrelated reply ignored",
            store.load_stats()["stats"]["ref-tok"]["animals"], 0)
 
-        # Reply to our own command is counted.
+        # The slow reply to the FIRST command is still matched and counted, even
+        # though a second command was sent in the meantime.
         await account._on_message(_Msg(102, _Ref(100)))
-        eq("ref gate: own reply counted",
+        eq("ref gate: slow reply to first command counted",
+           store.load_stats()["stats"]["ref-tok"]["animals"], 1)
+
+        # And the reply to the second command is counted too.
+        await account._on_message(_Msg(103, _Ref(200)))
+        eq("ref gate: second command reply counted",
+           store.load_stats()["stats"]["ref-tok"]["items"], 1)
+
+        # A duplicate reply for an already-answered command is ignored.
+        await account._on_message(_Msg(104, _Ref(100)))
+        eq("ref gate: duplicate reply ignored",
            store.load_stats()["stats"]["ref-tok"]["animals"], 1)
 
     asyncio.run(run())

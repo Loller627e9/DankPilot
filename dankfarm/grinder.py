@@ -96,23 +96,44 @@ class FarmAccount:
             return
         if message.channel.id != self.channel_id:
             return
-        last = self.grinder.last_sent.get(self.token)
-        if not last or message.id <= last["id"]:
+
+        # Match this reply against the commands we have in flight. Keeping only
+        # the *last* command is not enough: replies routinely arrive after the
+        # next command was already sent, and that command would then overwrite
+        # the slot and the reply would be dropped.
+        pending = self.grinder.pending.get(self.token)
+        if not pending:
             return
-        # The old working bot only counted a message that was a reply to the
-        # command it just sent, which keeps unrelated Dank Memer posts (drops,
-        # events) from being parsed as results. When the reference is exposed,
-        # enforce it; otherwise fall back to the "newer than our message" check.
         reference = getattr(message, "reference", None)
-        if reference is not None:
-            target = getattr(reference, "message_id", None)
-            if target is not None and target != last["id"]:
+        ref_id = getattr(reference, "message_id", None) if reference is not None else None
+        if ref_id is not None:
+            command = pending.pop(ref_id, None)
+            if command is None:
+                # A reply to something we did not send: not ours to record.
                 return
+        else:
+            # The reference is not exposed on this build; fall back to the oldest
+            # unanswered command so replies still line up in order.
+            ref_id, command = next(iter(pending.items()))
+            pending.pop(ref_id, None)
+
         # The reply text lives in the embed, not in message.content, so flatten
         # the whole message before parsing it.
         text = parsing.extract_reply_text(message)
-        kind = parsing.classify_reply(last["command"], text)
-        parsing.apply_stats(self.token, kind, text)
+        kind = parsing.classify_reply(command, text)
+        entry = parsing.apply_stats(self.token, kind, text)
+        if config.DEBUG_STATS:
+            log.info(
+                "reply (%s) cmd=%r kind=%s -> coins=%s animals=%s items=%s | text=%r",
+                mask_token(self.token),
+                command,
+                kind,
+                entry.get("coins") if entry else None,
+                entry.get("animals") if entry else None,
+                entry.get("items") if entry else None,
+                text[:200],
+            )
+        self.last_activity = time.monotonic()
 
     # -- farming --------------------------------------------------------------
     def _start_cycle(self) -> None:
@@ -151,7 +172,13 @@ class FarmAccount:
             message = await channel.send(
                 command, allowed_mentions=discord.AllowedMentions.none()
             )
-            self.grinder.last_sent[self.token] = {"id": message.id, "command": command}
+            # Remember every command in flight so a reply that arrives after the
+            # next command was sent can still be matched back to what caused it.
+            pending = self.grinder.pending.setdefault(self.token, {})
+            pending[message.id] = command
+            # Bound the map so a reply that never arrives cannot leak memory.
+            while len(pending) > 8:
+                pending.pop(next(iter(pending)))
             parsing.record_command(self.token)
             self.last_activity = time.monotonic()
             return True
@@ -182,7 +209,7 @@ class Grinder:
         self._tasks: dict[str, asyncio.Task] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._restart_attempts: dict[str, int] = {}
-        self.last_sent: dict[str, dict] = {}
+        self.pending: dict[str, dict[int, str]] = {}
         self._watchdog: asyncio.Task | None = None
         self._stopping = False
         # Keeps strong references to fire-and-forget tasks so the GC cannot
@@ -260,7 +287,7 @@ class Grinder:
         task = self._tasks.pop(token, None)
         if task:
             task.cancel()
-        self.last_sent.pop(token, None)
+        self.pending.pop(token, None)
         self._set_active(token, False)
         log.info("Stopped client for %s", mask_token(token))
         return True

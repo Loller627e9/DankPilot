@@ -107,9 +107,12 @@ accounts to resume on boot.
 Dank Memer sends its results inside an **embed**, and `message.content` is
 usually empty — so the bot flattens the embed (description, title, and every
 field) before parsing. Both the custom-emoji shape (`**1 <:Frog:123> Frog`) and
-the spaced shape (`**1** <:Frog:123> Frog`) are recognised. A reply is only
-counted when it is a reply to the command the bot just sent, so unrelated Dank
-Memer posts (drops, events) are ignored. Stats are attributed by command:
+the spaced shape (`**1** <:Frog:123> Frog`) are recognised. Every command the
+bot sends is remembered as "in flight", and each reply is matched back to the
+command it answers, so unrelated Dank Memer posts (drops, events) are ignored.
+Because a reply can arrive *after* the next command was sent, all in-flight
+commands are tracked at once — not just the most recent one. Stats are
+attributed by command:
 
 - A reply that carries both a Coin and a Bank marker sets the balance; the coin
   total tracks the high-water mark, so spending never lowers lifetime earnings.
