@@ -53,22 +53,19 @@ async function initializeBot() {
         }
 
         try {
-            const started = await grinder.startAllClients();
+            const started = await grinder.startActiveClients();
             console.log(`✅ Started ${started} farming client(s)`);
+            // Always run the watchdog so accounts that failed to log in (or drop
+            // later) are retried with backoff instead of staying dead.
+            grinder.startWatchdog();
         } catch (err) {
             console.error('Failed to auto-start farming clients:', err.message);
         }
     });
 
     client.on('messageCreate', async message => {
-        // Diagnostic: proves whether the bot can even see your message.
-        console.log(`📨 msg from ${message.author.tag} (${message.author.id}) in ${message.guild ? `#${message.channel.name} @ ${message.guild.name}` : 'DM'}: ${JSON.stringify(message.content)}`);
-
         if (message.author.bot) return;
-        if (!message.content.startsWith(handlers.PREFIX)) {
-            console.log(`   ↳ ignored: does not start with prefix "${handlers.PREFIX}"`);
-            return;
-        }
+        if (!message.content.startsWith(handlers.PREFIX)) return;
         try {
             await handlers.handleCommand(message);
         } catch (err) {

@@ -47,8 +47,21 @@ In a channel the bot can see:
 
 ```
 $add-token USER_TOKEN CHANNEL_ID
-$start-all
 ```
+
+The token is validated immediately and the account is added **inactive**. Start it
+explicitly — this is what makes the start/stop state predictable:
+
+```
+$toggle 0        # start account #0
+$stats           # confirm it shows as running
+$toggle 0        # stop it again
+$start-all       # or start every registered account at once
+$stop-all        # stop everything
+```
+
+Accounts marked active are restarted automatically when the bot boots; accounts
+left inactive stay off.
 
 ## 6. Optional: custom emojis
 

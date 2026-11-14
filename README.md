@@ -58,10 +58,11 @@ file at runtime.
 | `$help` | Command center embed |
 | `$stats` | Farm dashboard with per-account totals |
 | `$ping` | Latency and uptime |
-| `$add-token <token> <channelId>` | Register and log in a farming account |
+| `$add-token <token> <channelId>` | Validate + register an account (added **inactive**) |
 | `$remove-token <index>` | Remove an account |
-| `$toggle <index>` | Start/stop one account |
-| `$start-all` / `$stop-all` | Start/stop every active account |
+| `$toggle <index>` | Start/stop one account and persist its state |
+| `$start-all` | Start every registered account (marks them active) |
+| `$stop-all` | Stop every account and clear their active state |
 | `$grant <@user>` / `$revoke <@user>` | Manage the allow-list |
 | `$reset-stats` | Clear all statistics |
 | `$export-stats` | Write a timestamped stats file |
@@ -74,6 +75,16 @@ file at runtime.
 | `BOT_TOKEN` | — | Discord **bot** token (required) |
 | `OWNER_ID` | — | Your Discord user ID (required) |
 | `COMMAND_PREFIX` | `$` | Command prefix |
+| `FARM_COMMANDS` | `pls beg,pls hunt,pls dig,pls bal` | Commands sent each cycle |
+| `DEBUG_STATS` | `false` | Log every stat update to the console |
+| `COMMAND_JITTER` | `1500` | Random extra ms added to each command gap |
+| `CYCLE_JITTER` | `15000` | Random extra ms added between cycles |
+| `WATCHDOG_INTERVAL` | `60000` | ms between liveness checks |
+| `STALL_MS` | `90000` | Silence before a client is restarted |
+| `LOGIN_RETRIES` | `3` | Login attempts before giving up |
+| `MAX_BACKOFF` | `300000` | Max ms between restart attempts |
+| `CLIENT_BUILD_NUMBER` | `455964` | Discord client build sent on connect (keep in sync with the selfbot lib) |
+| `CLIENT_VERSION` | `1.0.9210` | Discord client version sent on connect |
 | `DATA_DIR` | `storage` | Where the JSON files live |
 | `COMMAND_INTERVAL` | `3000` | ms between farming commands |
 | `CYCLE_INTERVAL` | `45000` | ms between farming cycles |
