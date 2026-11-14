@@ -69,8 +69,6 @@ your server and falls back to unicode everywhere else.
 | `$start-all` / `$stop-all` | Start / stop every account |
 | `$grant <@user>` / `$revoke <@user>` | Manage who may use the bot |
 | `$ping` | Latency |
-| `$emojis-reload` | Rescan uploaded emojis |
-| `$reset-stats` / `$export-stats` | Stats maintenance |
 
 Slash commands: `/stats`, `/ping`, `/help`.
 
@@ -83,10 +81,13 @@ Slash commands: `/stats`, `/ping`, `/help`.
 - **◀️ Prev / ▶️ Next** — move between accounts
 - **🚜 Overview** — jump back to the all-accounts summary
 - **🔄 Refresh** — re-read the numbers
-- **⏯️ Start/Stop** — toggle the account you are looking at
+- **Start / Stop** — toggle the account you are looking at (the label follows the
+  account's current state)
 
 Each account page shows coins earned, animals caught, items found, commands
-sent, failures, and the masked token, with a matching banner image.
+sent, failures, and the masked token, with a matching banner image. Panels stay
+clickable for `VIEW_TIMEOUT` seconds (10 minutes by default); after that, run
+`$stats` again.
 
 ### What counts as an account
 
@@ -96,10 +97,21 @@ so a broken token never takes up space or shows up in the panel. Accounts that
 stop working are retried a few times (see `LOGIN_RETRIES`) and then dropped
 rather than hammering the gateway with login attempts forever.
 
-Stats are attributed by command, not by guessing from the reply text:
+Farming does **not** start by itself. Newly added accounts stay idle until you
+press **Start** in the panel or run `$start-all`; this stops a redeploy from
+quietly resuming every account. Set `AUTO_START=true` if you want active
+accounts to resume on boot.
+
+### How stats are read
+
+Dank Memer sends its results inside an **embed**, and `message.content` is
+usually empty — so the bot flattens the embed (description, title, and every
+field) before parsing. Both the custom-emoji shape (`**1 <:Frog:123> Frog`) and
+the spaced shape (`**1** <:Frog:123> Frog`) are recognised. Stats are
+attributed by command:
 
 - `pls bal` sets the coin high-water mark, so spending never lowers lifetime earnings.
-- `pls beg` / `pls work` replies that show a coin figure add that amount directly.
+- Any reply that shows a Coin/Bank figure raises the total (a `beg` reply counts too).
 - `pls hunt` / `pls dig` / `pls search` / `pls fish` add to animals or items.
 - Cooldown and refusal replies ("you're on a cooldown") count as failures and
   never inflate the totals.
@@ -121,6 +133,9 @@ The important ones:
 | `COMMAND_JITTER` / `CYCLE_JITTER` | `1500` / `20000` | Random spread (ms) |
 | `WATCHDOG_INTERVAL_MS` | `60000` | How often the watchdog checks |
 | `STALL_MS` | `180000` | Silence before an account is restarted |
+| `AUTO_START` | `false` | Resume active accounts on boot |
+| `VIEW_TIMEOUT` | `600` | Seconds the stats panel stays clickable |
+| `FARM_COMMANDS` | `pls beg,pls hunt,pls dig,pls bal` | Commands sent each cycle |
 | `DATA_DIR` | `data` | Where JSON state lives |
 | `BRAND_NAME` / `BRAND_TAGLINE` | `DANK FARM` / … | Banner text |
 

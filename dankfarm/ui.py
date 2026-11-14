@@ -16,15 +16,6 @@ COLOR_OK = 0x3CC878
 COLOR_ERR = 0xE5484D
 
 
-def _icon(name: str, use_custom: bool) -> str:
-    return E.get(name, use_custom)
-
-
-def in_guild(message: disnake.Message) -> bool:
-    """True when the message is in the guild that hosts the custom emojis."""
-    return message.guild is not None
-
-
 def status_embed(kind: str, text: str, use_custom: bool = True) -> disnake.Embed:
     icon = E.get("dk_sparkle", use_custom) if kind == "success" else E.get("dk_fail", use_custom)
     color = COLOR_OK if kind == "success" else COLOR_ERR
@@ -54,9 +45,8 @@ def help_embed(use_custom: bool = True) -> disnake.Embed:
     embed.add_field(
         name=f"{e('dk_sparkle')} Utility",
         value=(
-            f"`{prefix}ping` — latency + uptime\n"
-            f"`{prefix}emojis-reload` — rescan uploaded emojis\n"
-            f"`{prefix}reset-stats` / `{prefix}export-stats`"
+            f"`{prefix}ping` — latency\n"
+            f"`{prefix}help` — this list"
         ),
         inline=False,
     )

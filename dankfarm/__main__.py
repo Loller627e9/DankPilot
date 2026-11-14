@@ -38,8 +38,11 @@ async def main() -> None:
 
     grind = grinder_mod.Grinder()
     grind.start_watchdog()
-    started = await grind.start_active()
-    log.info("Resumed %d active account(s)", started)
+    if config.AUTO_START:
+        started = await grind.start_active()
+        log.info("Resumed %d active account(s)", started)
+    else:
+        log.info("Auto-start is off — press Start in $stats or run $start-all to begin farming")
 
     stop_event = asyncio.Event()
 

@@ -84,10 +84,14 @@ def test_classify() -> None:
 
 def test_parse_loot_custom_emoji() -> None:
     """Real Dank Memer loot puts a custom emoji between the number and name."""
+    # Exactly the old working shape: "**1 <:Frog:123> Frog" (no space before emoji).
+    loot = parsing.parse_loot("**1 <:Frog:123> Frog, **2 <:Snake:456> Snake", "hunt")
+    eq("loot: old-shape animals", loot["animals"], ["Frog", "Snake"])
+    loot = parsing.parse_loot("**1 <:Rock:1> Rock, **2 <:Gem:2> Gem", "dig")
+    eq("loot: old-shape items", loot["items"], ["Rock", "Gem"])
+    # The other shape with a space: "**1** <:Frog:123> Frog".
     loot = parsing.parse_loot("**1** <:Frog:123> Frog, **2** <:Snake:456> Snake", "hunt")
-    eq("loot: custom-emoji animals", loot["animals"], ["Frog", "Snake"])
-    loot = parsing.parse_loot("**1** <:Rock:1> Rock, **2** <:Gem:2> Gem", "dig")
-    eq("loot: custom-emoji items", loot["items"], ["Rock", "Gem"])
+    eq("loot: spaced-shape animals", loot["animals"], ["Frog", "Snake"])
     loot = parsing.parse_loot("You dug up a Rock!", "dig")
     eq("loot: plain dug-up", loot["items"], ["Rock"])
     # The kind must win over the wording, so a dig never lands in animals.
@@ -109,16 +113,60 @@ def test_failures_not_counted() -> None:
 
 
 def test_coin_gain_recorded() -> None:
-    """A beg/work reply that shows coins must raise the coin total."""
+    """A reply that shows the wallet must raise the coin total.
+
+    This mirrors the old working bot: every reply is scanned for a Coin/Bank
+    line, and the total is tracked as a high-water mark so spending never lowers
+    lifetime earnings.
+    """
     token = "coin-tok"
     parsing.initialize_stats(token, "T")
-    entry = parsing.apply_stats(token, "coin", "You begged and got 500 coins!")
+    entry = parsing.apply_stats(token, "coin", "<:Coin:1> 500\n<:Bank:2> 0")
     eq("coin: gain recorded", entry["coins"], 500)
-    entry = parsing.apply_stats(token, "coin", "You earned <:Coin:1> 1,250 from work!")
+    entry = parsing.apply_stats(token, "coin", "<:Coin:1> 1,750\n<:Bank:2> 0")
     eq("coin: second gain added", entry["coins"], 1750)
-    # A later balance check must not count the gains a second time.
-    entry = parsing.apply_stats(token, "balance", "Wallet: 1,750\nBank: 0")
-    eq("coin: no double count via balance", entry["coins"], 1750)
+    # Spending must not lower the lifetime total.
+    entry = parsing.apply_stats(token, "balance", "<:Coin:1> 900\n<:Bank:2> 0")
+    eq("coin: spending does not lower total", entry["coins"], 1750)
+    # A beg reply that shows the wallet counts even though it is not `pls bal`.
+    entry = parsing.apply_stats(token, "coin", "You begged and got some coins!\n<:Coin:1> 2,000")
+    eq("coin: beg reply with wallet counts", entry["coins"], 2000)
+
+
+def test_extract_reply_text() -> None:
+    """Dank Memer puts the result in an embed; content is usually empty."""
+    class _Author:
+        name = "Dank Memer"
+
+    class _Footer:
+        text = "dank memer"
+
+    class _Field:
+        name = "Caught"
+        value = "**1 <:Frog:123> Frog**"
+
+    class _Embed:
+        title = "Hunt"
+        description = "You caught a **Frog**!"
+        author = _Author()
+        footer = _Footer()
+        fields: tuple = (_Field(),)
+
+    class _Message:
+        content = ""
+        embeds: tuple = (_Embed(),)
+
+    text = parsing.extract_reply_text(_Message())
+    check("embed: description captured", "You caught a **Frog**" in text, text)
+    check("embed: field captured", "Frog" in text, text)
+    check("embed: title captured", "Hunt" in text, text)
+    # And the loot parses out of that flattened text.
+    eq("embed: animal recorded", parsing.parse_loot(text, "hunt")["animals"], ["Frog"])
+    # A message with no embeds must not raise.
+    class _Plain:
+        content = "hi"
+        embeds: tuple = ()
+    eq("embed: plain content", parsing.extract_reply_text(_Plain()), "hi")
 
 
 def test_permission_ids() -> None:
@@ -222,6 +270,94 @@ def test_add_token_pending_not_saved() -> None:
     eq("pending login: nothing saved", store.load_tokens()["tokens"], [])
 
 
+def test_view_navigation() -> None:
+    """The panel buttons must actually move between pages."""
+    import asyncio
+
+    from dankfarm import bot as bot_mod
+
+    store.save_tokens({"tokens": [
+        {"token": "A", "channelId": "1", "active": True, "verified": True},
+        {"token": "B", "channelId": "1", "active": False, "verified": True},
+    ]})
+    parsing.initialize_stats("A", "Alpha")
+    parsing.initialize_stats("B", "Beta")
+
+    class _Grinder:
+        def verified_entries(self):
+            return [e for e in store.load_tokens()["tokens"] if e.get("verified", True)]
+
+        def running_tokens(self):
+            return {"A"}
+
+        async def toggle(self, index):
+            entries = self.verified_entries()
+            token = entries[index]["token"]
+            data = store.load_tokens()
+            for entry in data["tokens"]:
+                if entry["token"] == token:
+                    entry["active"] = not entry.get("active")
+            store.save_tokens(data)
+            return {"ok": True, "active": not entries[index].get("active")}
+
+    class _Bot:
+        grinder = _Grinder()
+        use_custom = True
+
+    class _Response:
+        def __init__(self):
+            self.done = False
+
+        def is_done(self):
+            return self.done
+
+        async def defer(self):
+            self.done = True
+
+        async def send_message(self, *a, **k):
+            pass
+
+    class _Interaction:
+        def __init__(self):
+            self.response = _Response()
+            self.author = type("A", (), {"id": 1})()
+
+        async def edit_original_response(self, **k):
+            self.last = k
+
+        async def followup_send(self, *a, **k):
+            pass
+
+    async def run():
+        view = bot_mod.StatsView(_Bot(), 1)
+        eq("view: starts on overview", view.page, -1)
+        check("view: next enabled from overview", not view.next.disabled)
+        check("view: start disabled on overview", view.toggle.disabled)
+
+        await view.next.callback(_Interaction())
+        eq("view: next enters first account", view.page, 0)
+        eq("view: start label for running account", view.toggle.label, "Stop")
+
+        await view.toggle.callback(_Interaction())
+        eq("view: toggle stops the account",
+           store.load_tokens()["tokens"][0]["active"], False)
+
+        await view.next.callback(_Interaction())
+        eq("view: next reaches second account", view.page, 1)
+        check("view: next disabled on last page", view.next.disabled)
+        eq("view: start label for stopped account", view.toggle.label, "Start")
+
+        await view.overview.callback(_Interaction())
+        eq("view: overview jumps back", view.page, -1)
+
+    asyncio.run(run())
+
+
+def test_auto_start_default_off() -> None:
+    """Farming must not resume by itself unless AUTO_START is set."""
+    eq("config: AUTO_START defaults off", config.AUTO_START, False)
+
+
 def test_unverified_hidden() -> None:
     """An account without a verified flag must not be listed."""
     store.save_tokens({"tokens": [
@@ -292,6 +428,9 @@ def main() -> int:
         test_classify,
         test_failures_not_counted,
         test_coin_gain_recorded,
+        test_extract_reply_text,
+        test_view_navigation,
+        test_auto_start_default_off,
         test_permission_ids,
         test_apply_stats,
         test_emojis,

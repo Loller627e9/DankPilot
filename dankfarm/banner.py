@@ -49,8 +49,21 @@ def _font(kind: str, size: int):
     return font
 
 
-def _background(width: int, height: int, top: tuple, bottom: tuple):
-    """Vertical gradient background."""
+def _background(width: int, height: int, top: tuple, bottom: tuple, asset: str | None = None):
+    """Background image when available, otherwise a vertical gradient.
+
+    A bundled background is scaled to fill and darkened, so the white text on
+    top keeps its contrast.
+    """
+    if asset:
+        path = Path(config.ASSETS_DIR) / asset
+        if path.exists():
+            try:
+                img = Image.open(path).convert("RGB").resize((width, height), Image.LANCZOS)
+                overlay = Image.new("RGB", (width, height), (10, 8, 24))
+                return Image.blend(img, overlay, 0.55)
+            except OSError:  # pragma: no cover - corrupt asset
+                pass
     base = Image.new("RGB", (width, height), top)
     draw = ImageDraw.Draw(base)
     for y in range(height):
@@ -79,6 +92,17 @@ def _centered(draw, text, font, width, y, fill, glow=None) -> None:
         draw.text((x, y), text, font=font, fill=fill)
 
 
+def _fit(draw, text: str, font, max_width: float) -> str:
+    """Truncates ``text`` with an ellipsis so it fits within ``max_width`` px."""
+    if draw.textlength(text, font=font) <= max_width:
+        return text
+    ellipsis = "…"
+    trimmed = text
+    while trimmed and draw.textlength(trimmed + ellipsis, font=font) > max_width:
+        trimmed = trimmed[:-1]
+    return (trimmed + ellipsis) if trimmed else ""
+
+
 def render_banner(
     title: str | None = None,
     subtitle: str | None = None,
@@ -92,7 +116,7 @@ def render_banner(
     if not _PIL:
         return None
 
-    img = _background(width, height, (18, 16, 38), (34, 22, 66))
+    img = _background(width, height, (18, 16, 38), (34, 22, 66), asset="help_banner.png")
     draw = ImageDraw.Draw(img)
 
     # Accent frame.
@@ -135,7 +159,7 @@ def render_account_card(
         return None
 
     accent = (60, 200, 120) if running else (120, 120, 140)
-    img = _background(width, height, (16, 18, 34), (28, 20, 54))
+    img = _background(width, height, (16, 18, 34), (28, 20, 54), asset="account_card_bg.png")
     draw = ImageDraw.Draw(img)
     for i in range(4):
         draw.rectangle([i, i, width - 1 - i, height - 1 - i], outline=accent)
@@ -147,13 +171,16 @@ def render_account_card(
     label_font = _font("bold", 28)
     value_font = _font("bold", 46)
 
-    heading = f"#{index}  {name}" if index is not None else name
-    draw.text((36, 22), heading, font=head_font, fill=(255, 255, 255))
-
     status = "FARMING" if running else "STOPPED"
     sw = draw.textlength(status, font=small)
-    draw.rounded_rectangle([width - sw - 76, 34, width - 36, 78], radius=18, fill=accent)
-    draw.text((width - sw - 56, 40), status, font=small, fill=(10, 10, 20))
+    badge_left = width - sw - 76
+    # Keep the name clear of the status badge on the right.
+    heading = f"#{index}  {name}" if index is not None else name
+    heading = _fit(draw, heading, head_font, badge_left - 36 - 24)
+    _glow_text(draw, (36, 22), heading, head_font, (255, 255, 255), accent)
+
+    draw.rounded_rectangle([badge_left, 34, width - 36, 78], radius=18, fill=accent)
+    draw.text((badge_left + 20, 40), status, font=small, fill=(10, 10, 20))
 
     # Metric grid (2 columns).
     metrics = [
@@ -190,7 +217,7 @@ def render_overview(
         return None
 
     accent = (120, 80, 255)
-    img = _background(width, height, (18, 16, 38), (34, 22, 66))
+    img = _background(width, height, (18, 16, 38), (34, 22, 66), asset="stats_bg.png")
     draw = ImageDraw.Draw(img)
     for i in range(4):
         draw.rectangle([i, i, width - 1 - i, height - 1 - i], outline=accent)
@@ -200,7 +227,8 @@ def render_overview(
     value_font = _font("bold", 52)
     small = _font("regular", 24)
 
-    draw.text((48, 34), f"{config.BRAND_NAME} — OVERVIEW", font=title_font, fill=(255, 255, 255))
+    heading = _fit(draw, f"{config.BRAND_NAME} — OVERVIEW", title_font, width - 96)
+    draw.text((48, 34), heading, font=title_font, fill=(255, 255, 255))
     draw.rectangle([48, 104, 48 + 360, 110], fill=(0, 200, 255))
 
     metrics = [

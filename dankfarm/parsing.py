@@ -1,6 +1,12 @@
 """Reply parsing and stats accounting.
 
 Kept free of any Discord imports so it can be unit-tested in isolation.
+
+The regexes here are ported from the Node.js ``AssistanceBot`` that tracked
+stats correctly, so the shapes they match are the ones Dank Memer actually
+sends. The important one is :func:`extract_reply_text`: Dank Memer puts the
+result inside an *embed* and ``message.content`` is usually empty, which is why
+reading ``message.content`` alone recorded nothing.
 """
 
 from __future__ import annotations
@@ -9,32 +15,29 @@ import re
 
 from . import store
 
-_NUM = r"([\d,]+)"
-
 # A custom Discord emoji, e.g. <:Coin:123> or <a:Coin:123>.
 _EMOJI = r"<a?:[A-Za-z0-9_]+:\d+>"
 
-# Amount that follows a label, e.g. "Wallet: 1,234", "**Wallet** 1,234" or
-# "Wallet <:Coin:1> 1,234". The label may be separated from the number by a
-# Discord emoji, which is why the gap is "anything that is not a digit".
-_LABEL_AMOUNT = re.compile(
-    r"(?:{label})[^\d\n]{{0,32}}?{num}".format(label=r"(?:wallet|cash|purse|bank)", num=_NUM),
-    re.IGNORECASE,
-)
+# Balance line: "<:Coin:123> 1,234" / "<:Bank:456> 5,000" (old working format).
+_COIN_EMOJI = re.compile(r"<:Coin:.*?>\s*([\d,]+)")
+_BANK_EMOJI = re.compile(r"<:Bank:.*?>\s*([\d,]+)")
+# Last resort when the custom emoji is missing from the reply: the unicode coin.
+_COIN_UNICODE = re.compile(r"\U0001f4b0\s*([\d,]+)")
 
-# Amount that follows a coin/bank emoji, e.g. "<:Coin:1> 750" or "💰 750".
-_EMOJI_AMOUNT = re.compile(rf"(?:{_EMOJI}|\U0001f4b0|\U0001f3e6)\s*{_NUM}")
+# Amount that follows a label, e.g. "Wallet: 1,234" or "Bank 5,000". Kept as a
+# fallback for replies that spell the label out instead of using an emoji.
+_LABEL_AMOUNT = re.compile(r"(?:wallet|cash|purse|bank)[^\d\n]{0,32}?([\d,]+)", re.IGNORECASE)
 
-# Loot lines come in several shapes; real Dank Memer replies put a custom emoji
-# between the number and the name:
-#   "**1** <:Frog:123> Frog, **2** <:Snake:456> Snake"
-#   "**1** 🐸 Frog, **2** 🐍 Snake"
-#   "You caught a **Frog**!"
-_LOOT_ITEM = re.compile(rf"\*\*\s*\d+\s*\*\*[^\S\n]*(?:{_EMOJI}|\S{{1,4}})?[^\S\n]*([^\n,*]+)")
-_NAMED_LOOT = re.compile(r"\*\*([A-Za-z][A-Za-z0-9' \-]*?)\*\*")
-# A plain "<verb> a Frog" line with no bold markup.
+# Loot line, exactly the old working shape:
+#   "**1 <:Frog:123> Frog"  -> name is everything after the emoji, up to "*".
+_LOOT_ITEM = re.compile(r"\*\*\d+ [<:a-zA-Z0-9]+:\d+> ([^\*\n]+)")
+# The same but with a space between the number and its bold markers, which some
+# replies use: "**1** <:Frog:123> Frog".
+_LOOT_ITEM_SPACED = re.compile(r"\*\*\s*\d+\s*\*\*\s*(?:<a?:[A-Za-z0-9_]+:\d+>)?\s*([^\n,*]+)")
+# Plain "<verb> a Frog" or "<verb> a **Frog**" with no numbering.
 _PLAIN_LOOT = re.compile(
-    r"(?:caught|found|dug up|picked up|obtained)[^\S\n]+a[n]? ([A-Za-z][A-Za-z0-9' \-]{1,30})",
+    r"(?:caught|found|dug up|picked up|obtained)[^\S\n]+a[n]? "
+    r"\*{0,2}([A-Za-z][A-Za-z0-9' \-]{1,30}?)\*{0,2}(?=[\s.!?,]|$)",
     re.IGNORECASE,
 )
 
@@ -47,6 +50,35 @@ _FAILURE = re.compile(
     r"you must wait|slow down|you are being|ratelimit|rate limit",
     re.IGNORECASE,
 )
+
+
+def extract_reply_text(message) -> str:
+    """Flattens a Discord message into plain text.
+
+    Dank Memer sends its results inside embeds, so ``message.content`` is often
+    empty. This pulls the description, title, author, footer and every field out
+    of each embed and joins them, which is what the old working bot did.
+    """
+    parts: list[str] = []
+    content = getattr(message, "content", "") or ""
+    if content:
+        parts.append(str(content))
+    for embed in getattr(message, "embeds", None) or []:
+        for attr in ("title", "description"):
+            value = getattr(embed, attr, None)
+            if value:
+                parts.append(str(value))
+        author = getattr(embed, "author", None)
+        if author is not None and getattr(author, "name", None):
+            parts.append(str(author.name))
+        footer = getattr(embed, "footer", None)
+        if footer is not None and getattr(footer, "text", None):
+            parts.append(str(footer.text))
+        for field in getattr(embed, "fields", None) or []:
+            name = getattr(field, "name", "") or ""
+            value = getattr(field, "value", "") or ""
+            parts.append(f"{name} {value}")
+    return "\n".join(p for p in parts if p)
 
 
 def _clean_name(raw: str) -> str:
@@ -76,19 +108,16 @@ def _first(pattern: re.Pattern[str], text: str) -> int:
 def parse_coins(content: str) -> dict[str, int]:
     """Extracts ``{wallet, bank}`` from a balance reply (0 when absent)."""
     text = str(content or "")
-    wallet = 0
-    bank = 0
-    for match in _LABEL_AMOUNT.finditer(text):
-        label = match.group(0).lower()
-        value = _to_int(match.group(1))
-        if "bank" in label:
-            bank = bank or value
-        else:
-            wallet = wallet or value
-    if not wallet:
-        wallet = _first(_EMOJI_AMOUNT, text)
-    if not bank and re.search(r"bank", text, re.IGNORECASE):
-        bank = _first(_EMOJI_AMOUNT, text)
+    wallet = _first(_COIN_EMOJI, text) or _first(_COIN_UNICODE, text)
+    bank = _first(_BANK_EMOJI, text)
+    if not wallet and not bank:
+        for match in _LABEL_AMOUNT.finditer(text):
+            label = match.group(0).lower()
+            value = _to_int(match.group(1))
+            if "bank" in label:
+                bank = bank or value
+            else:
+                wallet = wallet or value
     return {"wallet": wallet, "bank": bank}
 
 
@@ -101,28 +130,30 @@ def parse_loot(content: str, kind: str | None = None) -> dict[str, list[str]]:
     text = str(content or "")
     if is_failure(text):
         return {"animals": [], "items": []}
-    is_animal = kind == "hunt" if kind in {"hunt", "dig"} else bool(
-        re.search(r"caught|hunting|hunt", text, re.IGNORECASE)
-    )
+
     names: list[str] = []
-    for match in _LOOT_ITEM.finditer(text):
-        name = _clean_name(match.group(1))
-        if name:
-            names.append(name)
-    if not names:
-        for match in _NAMED_LOOT.finditer(text):
+    for pattern in (_LOOT_ITEM, _LOOT_ITEM_SPACED):
+        for match in pattern.finditer(text):
             name = _clean_name(match.group(1))
-            # Skip the "**1**" numbering and headers like "**Hunt**".
-            if name and not name.isdigit() and name.lower() not in {"hunt", "dig", "search", "fish"}:
+            if name:
                 names.append(name)
+        if names:
+            break
+
     if not names:
         for match in _PLAIN_LOOT.finditer(text):
             name = _clean_name(match.group(1))
             if name:
                 names.append(name)
-    if is_animal:
-        return {"animals": names, "items": []}
-    return {"animals": [], "items": names}
+
+    if not names:
+        return {"animals": [], "items": []}
+
+    if kind in {"hunt", "dig"}:
+        is_animal = kind == "hunt"
+    else:
+        is_animal = bool(re.search(r"caught|hunting|hunt", text, re.IGNORECASE))
+    return {"animals": names, "items": []} if is_animal else {"animals": [], "items": names}
 
 
 def classify_reply(command: str, content: str) -> str:
@@ -142,7 +173,7 @@ def classify_reply(command: str, content: str) -> str:
     if re.search(r"found|dug|digging", text):
         return "dig"
     # Any other reply that still contains a coin figure counts as a coin gain.
-    if re.search(r"\d[\d,]*\s*(?:coins?|<:coin:)", text) or _EMOJI_AMOUNT.search(text):
+    if _COIN_EMOJI.search(text) or re.search(r"\d[\d,]*\s*coins?", text):
         return "coin"
     return "other"
 
@@ -172,25 +203,18 @@ def apply_stats(token: str, kind: str, content: str) -> dict | None:
         store.save_stats(data)
         return entry
 
-    if kind == "balance":
-        coins = parse_coins(content)
-        total = coins["wallet"] + coins["bank"]
-        # Track a high-water mark so spending does not lower lifetime earnings.
-        if total > entry.get("lastTotal", 0):
-            entry["coins"] = entry.get("coins", 0) + (total - entry.get("lastTotal", 0))
-        if total > 0:
-            entry["lastTotal"] = total
-    elif kind == "coin":
-        # A direct "you earned 500 coins" style reply.
-        gained = _first(re.compile(rf"{_NUM}\s*(?:coins?|<\S+>)"), content)
-        if not gained:
-            gained = _first(_EMOJI_AMOUNT, content)
-        if gained:
-            entry["coins"] = entry.get("coins", 0) + gained
-            # Advance the balance baseline by the same amount, otherwise the
-            # next balance check would count this gain a second time.
-            entry["lastTotal"] = entry.get("lastTotal", 0) + gained
-    elif kind == "hunt":
+    # The old working bot looked for a balance on every reply, not only on
+    # `pls bal`, so a beg/work reply that shows the wallet still counts.
+    coins = parse_coins(content)
+    total = coins["wallet"] + coins["bank"]
+    if total > entry.get("lastTotal", 0):
+        # High-water mark: coins earned is the highest balance ever seen. The
+        # mark only ever rises, so spending (which lowers the balance) cannot
+        # make a later rise re-count coins that were already tallied.
+        entry["coins"] = entry.get("coins", 0) + (total - entry.get("lastTotal", 0))
+        entry["lastTotal"] = total
+
+    if kind == "hunt":
         animals = parse_loot(content, "hunt")["animals"]
         entry["animals"] = entry.get("animals", 0) + len(animals)
         entry["catches"] = entry.get("catches", 0) + len(animals)

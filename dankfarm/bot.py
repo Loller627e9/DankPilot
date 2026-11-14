@@ -15,7 +15,6 @@ import disnake
 from disnake.ext import commands
 
 from . import banner, config, store, ui
-from . import emojis as E
 
 log = logging.getLogger("dankfarm.bot")
 
@@ -33,7 +32,7 @@ class StatsView(disnake.ui.View):
     """Pagination + actions for the per-account stats panel."""
 
     def __init__(self, bot: DankFarmBot, invoker_id: int, page: int = -1) -> None:
-        super().__init__(timeout=180)
+        super().__init__(timeout=config.VIEW_TIMEOUT)
         self.bot = bot
         self.invoker_id = invoker_id
         self.page = page  # -1 == overview
@@ -94,7 +93,8 @@ class StatsView(disnake.ui.View):
         return embed, file
 
     def _sync(self) -> None:
-        total = len(self._accounts())
+        tokens = self._accounts()
+        total = len(tokens)
         at_overview = self.page < 0
         # From the overview, Next moves onto the first account page, so it is
         # only disabled when there is nothing to page through.
@@ -102,13 +102,28 @@ class StatsView(disnake.ui.View):
         self.prev.disabled = at_overview
         self.overview.disabled = at_overview
         self.toggle.disabled = at_overview or total == 0
+        # Show what the button will do for the account currently on screen.
+        if not at_overview and total:
+            index = max(0, min(self.page, total - 1))
+            running = tokens[index]["token"] in self.bot.grinder.running_tokens()
+            self.toggle.label = "Stop" if running else "Start"
+            self.toggle.style = (
+                disnake.ButtonStyle.secondary if running else disnake.ButtonStyle.danger
+            )
+        else:
+            self.toggle.label = "Start"
 
     async def _refresh(self, interaction: disnake.MessageInteraction) -> None:
+        # Acknowledge within Discord's 3s window first. Rendering a banner can
+        # take a moment on a free host, and acking late is what makes Discord
+        # report "the application did not respond".
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         self._sync()
         embed, file = self.render()
         # Always pass attachments so a page without a banner clears the previous
         # page's image instead of leaving it on screen.
-        await interaction.response.edit_message(
+        await interaction.edit_original_response(
             embed=embed, view=self, attachments=[file] if file else []
         )
 
@@ -139,15 +154,27 @@ class StatsView(disnake.ui.View):
     async def refresh(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction) -> None:
         await self._refresh(interaction)
 
-    @disnake.ui.button(label="Start/Stop", emoji="⏯️", style=disnake.ButtonStyle.danger)
+    @disnake.ui.button(label="Start", emoji="▶️", style=disnake.ButtonStyle.danger)
     async def toggle(self, button: disnake.ui.Button, interaction: disnake.MessageInteraction) -> None:
+        if self.page < 0:
+            await interaction.response.send_message(
+                "Open an account page first (press Next).", ephemeral=True
+            )
+            return
+        # Starting an account logs in, which can take longer than the ack window.
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         res = await self.bot.grinder.toggle(self.page)
         if not res.get("ok"):
-            await interaction.response.send_message(
+            await interaction.followup.send(
                 f"Could not toggle account: {res.get('error') or 'unknown error'}", ephemeral=True
             )
             return
-        await self._refresh(interaction)
+        self._sync()
+        embed, file = self.render()
+        await interaction.edit_original_response(
+            embed=embed, view=self, attachments=[file] if file else []
+        )
 
 
 class DankFarmBot(commands.Bot):
@@ -217,15 +244,6 @@ class DankFarmBot(commands.Bot):
             await reply("success", f"Stopped {await self.grinder.stop_all()} client(s).")
         elif cmd in {"grant", "revoke"}:
             await self._cmd_access(cmd, args, prefix, reply)
-        elif cmd == "emojis-reload":
-            E.reload()
-            await reply("success", f"Reloaded emojis ({E.count_custom()} active).")
-        elif cmd == "reset-stats":
-            ok = self.grinder.reset_stats()
-            await reply("success" if ok else "error", "Stats reset." if ok else "Reset failed.")
-        elif cmd == "export-stats":
-            path = self.grinder.export_stats()
-            await reply("success" if path else "error", f"Exported to `{path}`" if path else "Export failed.")
         else:
             await reply("error", f"Unknown command. Use `{prefix}help`.")
 
@@ -283,12 +301,14 @@ class DankFarmBot(commands.Bot):
         if not has_permission(inter.author.id):
             await inter.response.send_message("You do not have permission.", ephemeral=True)
             return
+        # Ack first, then render, so a slow host cannot miss the 3s window.
+        await inter.response.defer()
         view = StatsView(self, inter.author.id)
         embed, file = view.render()
         if file:
-            await inter.response.send_message(embed=embed, file=file, view=view)
+            await inter.edit_original_response(embed=embed, file=file, view=view)
         else:
-            await inter.response.send_message(embed=embed, view=view)
+            await inter.edit_original_response(embed=embed, view=view)
 
     @commands.slash_command(description="Ping the bot")
     async def ping(self, inter: disnake.ApplicationCommandInteraction) -> None:

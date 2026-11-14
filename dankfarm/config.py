@@ -72,21 +72,22 @@ CYCLE_JITTER = _env_int("CYCLE_JITTER", 20000)
 
 FARM_COMMANDS = [
     cmd.strip()
-    for cmd in _env(
-        "FARM_COMMANDS", "pls beg,pls hunt,pls dig,pls search,pls fish,pls work,pls bal"
-    ).split(",")
+    for cmd in _env("FARM_COMMANDS", "pls beg,pls hunt,pls dig,pls bal").split(",")
     if cmd.strip()
 ]
+
+# Farming does not begin until an account is started on purpose (the Start
+# button or $start-all). Set AUTO_START=true to resume active accounts on boot.
+AUTO_START = _env_bool("AUTO_START", False)
+
+# Seconds a stats panel stays interactive before its buttons stop working.
+VIEW_TIMEOUT = _env_int("VIEW_TIMEOUT", 600)
 
 # --- Reliability -------------------------------------------------------------
 LOGIN_RETRIES = _env_int("LOGIN_RETRIES", 3)
 MAX_BACKOFF_MS = _env_int("MAX_BACKOFF_MS", 300000)
 WATCHDOG_INTERVAL_MS = _env_int("WATCHDOG_INTERVAL_MS", 60000)
 STALL_MS = _env_int("STALL_MS", 180000)
-# Reacting to one of these emojis on a stats card navigates it.
-NAV_EMOJI_PREV = _env("NAV_EMOJI_PREV", "\u25c0\ufe0f")
-NAV_EMOJI_NEXT = _env("NAV_EMOJI_NEXT", "\u25b6\ufe0f")
-NAV_EMOJI_CLOSE = _env("NAV_EMOJI_CLOSE", "\u23f9\ufe0f")
 
 # --- Storage -----------------------------------------------------------------
 DATA_DIR = Path(_env("DATA_DIR") or (BASE_DIR / "data"))
@@ -95,9 +96,9 @@ STATS_PATH = DATA_DIR / "stats.json"
 ACCESS_PATH = DATA_DIR / "access.json"
 EMOJIS_PATH = DATA_DIR / "emojis.json"
 
-ASSETS_DIR = BASE_DIR / "assets"
 EMOJI_DIR = BASE_DIR / "emojis"
 FONT_DIR = BASE_DIR / "fonts"
+ASSETS_DIR = BASE_DIR / "assets"
 
 # --- Keep-alive web server ---------------------------------------------------
 KEEP_ALIVE = _env_bool("KEEP_ALIVE", True)
@@ -109,11 +110,7 @@ SELF_URL = _env("SELF_URL") or _env("RENDER_EXTERNAL_URL")
 BRAND_NAME = _env("BRAND_NAME", "DANK FARM")
 BRAND_TAGLINE = _env("BRAND_TAGLINE", "Multi-Account Automation Suite")
 
-# --- Discord client identity -------------------------------------------------
-# discord.py-self fetches the live build number itself; these only force a
-# value if you want to pin one.
-CLIENT_BUILD_NUMBER = _env("CLIENT_BUILD_NUMBER")
-CLIENT_VERSION = _env("CLIENT_VERSION")
+# --- Diagnostics -------------------------------------------------------------
 DEBUG_STATS = _env_bool("DEBUG_STATS", False)
 
 

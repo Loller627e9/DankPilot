@@ -13,7 +13,6 @@ import contextlib
 import logging
 import random
 import time
-from datetime import UTC
 
 import discord
 
@@ -100,8 +99,11 @@ class FarmAccount:
         last = self.grinder.last_sent.get(self.token)
         if not last or message.id <= last["id"]:
             return
-        kind = parsing.classify_reply(last["command"], message.content)
-        parsing.apply_stats(self.token, kind, message.content)
+        # The reply text lives in the embed, not in message.content, so flatten
+        # the whole message before parsing it.
+        text = parsing.extract_reply_text(message)
+        kind = parsing.classify_reply(last["command"], text)
+        parsing.apply_stats(self.token, kind, text)
         self.grinder.last_reply[self.token] = kind
 
     # -- farming --------------------------------------------------------------
@@ -348,6 +350,10 @@ class Grinder:
                 log.warning("Watchdog: %s stalled", mask_token(token))
                 self._spawn(self.handle_drop(token))
 
+            # Resuming accounts on boot is opt-in; otherwise farming only begins
+            # when the user starts an account on purpose.
+            if not config.AUTO_START:
+                continue
             for entry in self.verified_entries():
                 if not entry.get("active"):
                     continue
@@ -459,19 +465,3 @@ class Grinder:
         await self.stop(token)
         self._set_active(token, False)
         return {"ok": True, "active": False}
-
-    def reset_stats(self) -> bool:
-        data = store.load_stats()
-        for entry in data["stats"].values():
-            name = entry.get("name", "unknown")
-            entry.clear()
-            entry.update(store.blank_stats(name))
-        return store.save_stats(data)
-
-    def export_stats(self) -> str | None:
-        from datetime import datetime
-
-        data = store.load_stats()
-        stamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        path = config.DATA_DIR / f"stats_export_{stamp}.json"
-        return str(path) if store.write_json(path, data) else None

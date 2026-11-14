@@ -20,11 +20,17 @@ Multi-account Dank Memer automation panel. Selfbot accounts run on
 ## Commands
 - `python -m dankfarm` — run everything (health server + grinder + admin bot)
 - `python -m dankfarm.upload_emojis` — one-shot emoji upload
-- `python tests/run_tests.py` — tests, no extra dependency (93 checks)
+- `python tests/run_tests.py` — tests, no extra dependency (134 checks)
 - `ruff check dankfarm tests` — lint (config in pyproject.toml)
 
 ## Conventions
 - `parsing.py` must stay free of Discord imports so it stays unit-testable.
+- **Dank Memer puts results in an embed**, so `message.content` is usually empty.
+  Always read text via `parsing.extract_reply_text(message)`, never `.content`
+  directly — this was the root cause of stats never being recorded.
+- Button handlers must `await interaction.response.defer()` before any slow work
+  (banner render, login/toggle); missing that is what makes Discord report "the
+  application did not respond".
 - `store.write_json` is atomic (temp file + `os.replace`); keep it that way.
 - A token that fails to log in is deactivated, not retried forever, so the
   watchdog cannot spin on a bad token.
