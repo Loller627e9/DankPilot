@@ -1,125 +1,158 @@
-# 🚜 Dank Farm Bot
+# 🚜 DANK FARM
 
-A Discord **admin bot** (discord.js v14) that drives a fleet of Dank Memer
-farming accounts through `discord.js-selfbot-v13`, with a polished embed UI,
-custom animated emojis, and one-command deploy to Render.
+**Multi-Account Automation Suite**
 
-## ✨ Features
+A control panel for running several Dank Memer farming accounts at once. You get
+one clean Discord bot with prefix commands *and* slash commands, a paginated
+stats panel with buttons, and image banners for every account.
 
-- **Multi-account farming** — automate `pls beg/hunt/dig/bal` across many tokens
-- **Live dashboard** — coins, animals, items, commands and failures per account
-- **Custom emoji UI** — bundled animated emojis + banner art, with a unicode
-  fallback so nothing ever renders broken
-- **Access control** — owner plus a grantable allow-list
-- **Safe storage** — atomic JSON writes, per-file write queue, token masking
-- **Keep-alive server** — `/health` endpoint + self-ping so a Render free
-  Web Service does not idle-sleep
-- **Env-first config** — `BOT_TOKEN` / `OWNER_ID` from environment variables,
-  with `config.json` as a local fallback
+> **Read this first.** The farming accounts are driven with **user tokens**
+> (self-bots). Automating a user account breaks Discord's Terms of Service and
+> can get those accounts banned. That risk is inherent to the tool and is not
+> something the code can remove. Use accounts you are willing to lose.
 
-## 📦 Quick start (local)
+---
 
-```bash
-npm install
-cp .env.example .env      # then fill in BOT_TOKEN and OWNER_ID
-npm start
-```
+## What's new in v3 (the Python rewrite)
 
-Prefer a file? Create `config.json`:
+- **Rewritten in Python.** Selfbot side runs on `discord.py-self`; the admin
+  bot runs on `disnake`. They coexist because they install under different
+  package names.
+- **Per-account stats pages.** `/stats` opens a panel you page through with
+  buttons (◀️ ▶️), plus Overview / Refresh / Start-Stop.
+- **Image banners.** Every reply can carry a Pillow-rendered card with the
+  **DANK FARM** brand name.
+- **Reliability.** A watchdog restarts stalled accounts; drops recover with
+  jittered exponential backoff; the farm loop can no longer die silently.
 
-```json
-{ "botToken": "YOUR_BOT_TOKEN", "ownerId": "YOUR_USER_ID" }
-```
+---
 
-Run the checks and smoke tests:
+## Quick start
 
 ```bash
-npm run check   # syntax-check every file
-npm test        # dependency-free behaviour tests
+python -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+
+cp .env.example .env               # then edit .env (BOT_TOKEN, OWNER_ID)
+python -m dankfarm
 ```
 
-## 🎨 Custom emojis and art
+In the Discord Developer Portal, open your application → **Bot** and enable
+**Message Content Intent**. The bot itself needs no privileged intents beyond
+that.
 
-`assets/` holds the embed banners. `emojis/` holds the animated emojis.
+### Upload the custom emojis (once)
 
 ```bash
-npm run upload-emojis   # manual: uploads emojis/ as application emojis
+python -m dankfarm.upload_emojis
 ```
 
-The bot also **auto-uploads any missing emojis on startup**, so a fresh Render
-deploy restores the custom set with no shell needed. Until the upload succeeds
-the bot uses unicode emojis, so it always works. `$emojis-reload` re-reads the
-file at runtime.
+This uploads everything in `emojis/` to your application and writes the
+resulting `<:name:id>` strings to `data/emojis.json`. The UI uses them inside
+your server and falls back to unicode everywhere else.
 
-## 🤖 Commands
+---
+
+## Commands
 
 | Command | What it does |
 | --- | --- |
-| `$help` | Command center embed |
-| `$stats` | Farm dashboard with per-account totals |
-| `$ping` | Latency and uptime |
-| `$add-token <token> <channelId>` | Validate + register an account (added **inactive**) |
-| `$remove-token <index>` | Remove an account |
-| `$toggle <index>` | Start/stop one account and persist its state |
-| `$start-all` | Start every registered account (marks them active) |
-| `$stop-all` | Stop every account and clear their active state |
-| `$grant <@user>` / `$revoke <@user>` | Manage the allow-list |
-| `$reset-stats` | Clear all statistics |
-| `$export-stats` | Write a timestamped stats file |
-| `$emojis-reload` | Reload the custom emoji set |
+| `$help` | Command list |
+| `$stats` | Paginated stats panel (buttons) |
+| `$add-token <token> <channelId>` | Register an account (inactive) |
+| `$remove-token <index>` | Delete an account |
+| `$toggle <index>` | Start / stop one account |
+| `$start-all` / `$stop-all` | Start / stop every account |
+| `$grant <@user>` / `$revoke <@user>` | Manage who may use the bot |
+| `$ping` | Latency |
+| `$emojis-reload` | Rescan uploaded emojis |
+| `$reset-stats` / `$export-stats` | Stats maintenance |
 
-## ⚙️ Configuration
+Slash commands: `/stats`, `/ping`, `/help`.
 
-| Variable | Default | Purpose |
+---
+
+## The stats panel
+
+`$stats` (or `/stats`) opens the overview. Buttons:
+
+- **◀️ Prev / ▶️ Next** — move between accounts
+- **🚜 Overview** — jump back to the all-accounts summary
+- **🔄 Refresh** — re-read the numbers
+- **⏯️ Start/Stop** — toggle the account you are looking at
+
+Each account page shows coins earned, animals caught, items found, commands
+sent, failures, and the masked token, with a matching banner image.
+
+---
+
+## Configuration
+
+All settings are environment variables; see `.env.example` for the full list.
+The important ones:
+
+| Variable | Default | Meaning |
 | --- | --- | --- |
-| `BOT_TOKEN` | — | Discord **bot** token (required) |
-| `OWNER_ID` | — | Your Discord user ID (required) |
-| `COMMAND_PREFIX` | `$` | Command prefix |
-| `FARM_COMMANDS` | `pls beg,pls hunt,pls dig,pls bal` | Commands sent each cycle |
-| `DEBUG_STATS` | `false` | Log every stat update to the console |
-| `COMMAND_JITTER` | `1500` | Random extra ms added to each command gap |
-| `CYCLE_JITTER` | `15000` | Random extra ms added between cycles |
-| `WATCHDOG_INTERVAL` | `60000` | ms between liveness checks |
-| `STALL_MS` | `90000` | Silence before a client is restarted |
-| `LOGIN_RETRIES` | `3` | Login attempts before giving up |
-| `MAX_BACKOFF` | `300000` | Max ms between restart attempts |
-| `CLIENT_BUILD_NUMBER` | `455964` | Discord client build sent on connect (keep in sync with the selfbot lib) |
-| `CLIENT_VERSION` | `1.0.9210` | Discord client version sent on connect |
-| `DATA_DIR` | `storage` | Where the JSON files live |
-| `COMMAND_INTERVAL` | `3000` | ms between farming commands |
-| `CYCLE_INTERVAL` | `45000` | ms between farming cycles |
-| `KEEP_ALIVE` | `true` | Run the health server + self-ping |
-| `PORT` | `3000` | Health server port |
-| `SELF_URL` | `RENDER_EXTERNAL_URL` | URL the self-ping targets |
-| `SELF_PING_MS` | `600000` | Self-ping interval |
+| `BOT_TOKEN` | — | Admin bot token (required) |
+| `OWNER_ID` | — | Your user ID (required) |
+| `COMMAND_PREFIX` | `$` | Text command prefix |
+| `COMMAND_INTERVAL` | `4000` | Delay between commands (ms) |
+| `CYCLE_INTERVAL` | `65000` | Delay between cycles (ms) |
+| `COMMAND_JITTER` / `CYCLE_JITTER` | `1500` / `20000` | Random spread (ms) |
+| `WATCHDOG_INTERVAL_MS` | `60000` | How often the watchdog checks |
+| `STALL_MS` | `180000` | Silence before an account is restarted |
+| `DATA_DIR` | `data` | Where JSON state lives |
+| `BRAND_NAME` / `BRAND_TAGLINE` | `DANK FARM` / … | Banner text |
 
-## 📁 Structure
+---
+
+## Deploying to Render (free)
+
+1. Push this repo to GitHub.
+2. In Render: **New → Blueprint**, point it at the repo. `render.yaml` is
+   picked up automatically.
+3. Set `BOT_TOKEN` and `OWNER_ID` in the dashboard when prompted.
+4. The service binds to `$PORT` and answers `/health`, which the keep-alive
+   server also self-pings so a free instance does not idle-sleep.
+
+A disk is **not** configured in `render.yaml`, because Render's free plan does
+not offer persistent disks. State lives on the ephemeral filesystem at
+`DATA_DIR=data`, so it resets on every redeploy or restart — re-add accounts
+with `$add-token` after a deploy. Free instances also sleep after ~15 minutes
+of inactivity; the keep-alive server self-pings every 10 minutes to stay awake,
+but a truly idle instance will still cold-start on the next request.
+
+Prefer Docker? A `Dockerfile` is included, and it mounts a `/data` volume so
+state survives container restarts.
+
+---
+
+## Project layout
 
 ```
-.
-├── index.js            # entry point: Discord client + lifecycle
-├── config.js           # env-first configuration
-├── store.js            # atomic JSON persistence
-├── keepalive.js        # health server + self-ping
-├── grinder.js          # selfbot farming logic
-├── handlers.js         # admin command handlers
-├── ui.js               # embed builders
-├── emojis.js           # custom emoji lookup + fallback
-├── upload-emojis.js    # one-time emoji uploader
-├── assets/             # embed banners
-├── emojis/             # animated emoji images
-├── storage/            # tokens.json, stats.json, access.json, emojis.json
-└── test/               # dependency-free tests
+dankfarm/
+  config.py         environment-driven settings
+  store.py          atomic JSON persistence
+  parsing.py        reply parsing + stats (pure, tested)
+  emojis.py         custom-emoji lookup with unicode fallback
+  banner.py         Pillow banner renderer
+  grinder.py        selfbot lifecycle, farm loop, watchdog
+  ui.py             embed builders
+  bot.py            admin bot: commands + paginated stats views
+  keepalive.py      health server + self-ping
+  upload_emojis.py  one-shot emoji uploader
+tests/run_tests.py  test suite
 ```
 
-## 🌐 Deploy on Render
+## Tests
 
-See [DEPLOY.md](DEPLOY.md). In short: push the repo, create a **Web Service**
-(or apply `render.yaml`), set `BOT_TOKEN` and `OWNER_ID`, and let the built-in
-keep-alive server hold the free instance open.
+```bash
+python tests/run_tests.py      # no extra dependency
+# or
+python -m pytest -q
+```
 
-## ⚠️ Disclaimer
+## License
 
-Driving user accounts with a selfbot violates Discord's Terms of Service and
-can get accounts banned. This project is for educational use only. You are
-responsible for how you run it.
+MIT — see `LICENSE`.

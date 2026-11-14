@@ -1,15 +1,14 @@
-# Dependencies
-node_modules/
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
 
 # Secrets & runtime data
 .env
-config.json
-storage/tokens.json
-storage/stats.json
-storage/access.json
-storage/emojis.json
-storage/stats_export_*.json
-sent_commands.log
+data/
 *.log
 
 # OS / editor
@@ -17,4 +16,6 @@ sent_commands.log
 Thumbs.db
 .vscode/
 .idea/
-*.swp
+
+# tooling
+.ruff_cache/
