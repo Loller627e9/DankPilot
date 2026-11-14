@@ -20,7 +20,15 @@ Multi-account Dank Memer automation panel. Selfbot accounts run on
 ## Commands
 - `python -m dankfarm` — run everything (health server + grinder + admin bot)
 - `python -m dankfarm.upload_emojis` — one-shot emoji upload
-- `python tests/run_tests.py` — tests, no extra dependency (134 checks)
+
+## Gotchas
+
+- The application-emoji routes (`/applications/{id}/emojis`) reject the `@me`
+  shorthand with `400 Value "@me" is not snowflake`. Always resolve the real id
+  first via `/oauth2/applications/@me` (that route does accept `@me`).
+- `data/` is ephemeral on free hosts. Anything that must survive a restart is
+  either rebuilt at boot (the emoji map, from Discord) or seeded from env.
+- `python tests/run_tests.py` — tests, no extra dependency (151 checks)
 - `ruff check dankfarm tests` — lint (config in pyproject.toml)
 
 ## Conventions
