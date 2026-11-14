@@ -1,0 +1,9 @@
+# Selfbot side: drives the farming accounts (user tokens).
+discord.py-self==2.1.0
+# Admin bot side: prefix + slash commands and interactive button views.
+# disnake installs as `disnake`, so it coexists with discord.py-self.
+disnake==2.12.2
+# Image banners.
+Pillow==13.0.0
+# Health server + self-ping.
+aiohttp==3.14.5

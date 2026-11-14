@@ -1,0 +1,37 @@
+# Render blueprint — https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: dank-farm
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m dankfarm
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.13.0"
+      - key: KEEP_ALIVE
+        value: "true"
+      # Render's free plan has no persistent disk, so data lives on the
+      # ephemeral filesystem and resets on redeploy. Tokens/stats are re-seeded
+      # from the dashboard or the .env / config on next boot.
+      - key: DATA_DIR
+        value: data
+      - key: COMMAND_INTERVAL
+        value: "4000"
+      - key: CYCLE_INTERVAL
+        value: "65000"
+      - key: COMMAND_JITTER
+        value: "1500"
+      - key: CYCLE_JITTER
+        value: "20000"
+      - key: WATCHDOG_INTERVAL_MS
+        value: "60000"
+      - key: STALL_MS
+        value: "180000"
+      # Set these two in the Render dashboard (marked sync: false so they are
+      # never committed).
+      - key: BOT_TOKEN
+        sync: false
+      - key: OWNER_ID
+        sync: false
