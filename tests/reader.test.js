@@ -141,3 +141,20 @@ test('a described message is written as one JSON line', () => {
     const last = JSON.parse(after.trim().split('\n').pop());
     assert.strictEqual(last.text, 'hello');
 });
+
+test('the recent buffer keeps the newest snapshots', () => {
+    reader.clearRecent();
+    for (let i = 1; i <= 5; i++) reader.record(reader.describe(msg({ content: `m${i}` })));
+    const last3 = reader.recent(3).map((s) => s.text);
+    assert.deepStrictEqual(last3, ['m3', 'm4', 'm5']);
+    assert.strictEqual(reader.recent(100).length, 5);
+    reader.clearRecent();
+    assert.strictEqual(reader.recent(5).length, 0);
+});
+
+test('a numbered-list reply is attributed and parsed as a catch', () => {
+    const P = require('../parsing');
+    const r = P.parseLoot('**1 <:Frog:1> Frog**', 'hunt');
+    assert.deepStrictEqual(r.animals, ['Frog']);
+    assert.strictEqual(reader.looksLikeResult('**1 <:Frog:1> Frog**'), true);
+});

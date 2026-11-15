@@ -153,6 +153,14 @@ async function handleCommand(message) {
                 for (const a of grinder.accountStatus()) {
                     lines.push(`• ${a.label} — ${a.ready ? 'ready' : 'not ready'}, pending ${a.pending}, idle ${Math.round(a.idleMs / 1000)}s`);
                 }
+                const wrong = grinder.foreignChannels();
+                if (wrong.length) {
+                    lines.push('');
+                    lines.push('**Dank Memer replied in other channel(s)** — check the channel id');
+                    for (const c of wrong.slice(0, 3)) {
+                        lines.push(`• \`${c.channelId}\` x${c.count}: ${JSON.stringify((c.sample || '').slice(0, 80))}`);
+                    }
+                }
                 const recent = grinder.recentInbound(3);
                 lines.push('');
                 lines.push(`**Last ${recent.length} inbound message(s)**`);

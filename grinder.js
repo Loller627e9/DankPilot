@@ -127,11 +127,15 @@ function bindMessageHandler(token, channelId, client) {
     client.on('messageCreate', async (message) => {
         try {
             if (!message || !message.channel) return;
-            // Everything in the channel is described and logged, not only what
-            // looks like a reply. When tracking reads nothing, this log is the
-            // only way to see what actually arrived.
-            if (String(message.channel.id) !== String(channelId)) return;
             if (!message.author || message.author.id === (client.user && client.user.id)) return;
+
+            // A reply in another channel is not ours to count, but if Dank
+            // Memer is answering somewhere else it means the configured channel
+            // is wrong. Note it, so /debug can show where the bot actually is.
+            if (String(message.channel.id) !== String(channelId)) {
+                noteForeign(message);
+                return;
+            }
 
             const acct = accounts.get(token);
             if (!acct) return;
@@ -157,6 +161,26 @@ function bindMessageHandler(token, channelId, client) {
     });
 }
 
+// Channels where Dank Memer replied but which are not the configured one, so a
+// mismatched channel id is visible instead of looking like silence.
+const foreign = new Map();
+
+function noteForeign(message) {
+    if (!message.author || message.author.id !== reader.DANK_MEMER_ID) return;
+    const id = String(message.channel.id);
+    const entry = foreign.get(id) || { channelId: id, count: 0, lastAt: 0, sample: '' };
+    entry.count++;
+    entry.lastAt = Date.now();
+    const text = reader.textOf(message).slice(0, 200);
+    if (text) entry.sample = text;
+    foreign.set(id, entry);
+    if (foreign.size > 20) foreign.delete(foreign.keys().next().value);
+}
+
+function foreignChannels() {
+    return Array.from(foreign.values());
+}
+
 // A one-line summary of what a reply changed, so the log shows whether a read
 // landed. Returns "no change" when the numbers were untouched.
 function describeDelta(before, after) {
@@ -168,7 +192,11 @@ function describeDelta(before, after) {
 
 // -- diagnostics -------------------------------------------------------------
 // The last N inbound messages, newest first, for the debug command.
+// Newest first. The in-memory buffer is preferred because a free host wipes the
+// data directory on redeploy; the log file is the fallback for a long run.
 function recentInbound(limit) {
+    const buffered = reader.recent(limit);
+    if (buffered.length) return buffered.slice().reverse();
     try {
         const raw = fs.readFileSync(reader.INBOUND_LOG, 'utf8');
         const lines = raw.split('\n').filter(Boolean);
@@ -179,6 +207,11 @@ function recentInbound(limit) {
 }
 
 // What each account is waiting on and how long since it heard anything.
+// Every account's counters, for the /debug endpoint.
+function snapshot() {
+    return stats.getAllStats();
+}
+
 function accountStatus() {
     const out = [];
     for (const [token, acct] of accounts) {
@@ -380,6 +413,8 @@ module.exports = {
     DANK_MEMER_ID,
     recentInbound,
     accountStatus,
+    snapshot,
+    foreignChannels,
     isActionable,
     _accounts: accounts,
     _bindDropRecovery: bindDropRecovery,

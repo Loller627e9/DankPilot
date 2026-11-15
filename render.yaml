@@ -31,3 +31,6 @@ services:
       # Optional: extra ids to treat as Dank Memer.
       - key: EXTRA_BOT_IDS
         sync: false
+      # Optional: guards the /debug endpoint that returns raw inbound messages.
+      - key: DEBUG_KEY
+        sync: false

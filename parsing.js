@@ -39,18 +39,31 @@ const EXTRA_ALIASES = {
 };
 
 // -- loot --------------------------------------------------------------------
-// The reply texts, as they arrive. Only the part up to "back a" is the trigger;
-// whatever follows names the catch.
+// A catch is recognised by any of the shapes Dank Memer has used, because the
+// same bot words the same result differently from build to build:
 //
-//   You went hunting and brought back a **Frog**
-//   You dug in the dirt and brought back a **Rock**
-//   You found nothing while digging
-const HUNT_HIT = /you went hunting and brought back a/i;
-const DIG_HIT = /you dug in the dirt and brought back a/i;
-const MISS = /found nothing while (?:digging|hunting|fishing|searching)/i;
+//   "You went hunting and brought back a **Frog**"      prose, bold name
+//   "You dug in the dirt and brought back a **Rock**"   prose, bold name
+//   "**1 <:Frog:123> Frog**"                            numbered list line
+//   "You caught a **Rock**" / "You found a Rock"        other prose
+//
+// The trigger is the wording that reports a catch, not the item's name and not
+// the emoji, so a reply counts whether or not it prints a picture.
+const CATCH = /brought back|caught|dug up|found a|picked up|obtained/i;
+// "You found nothing while digging" is an outcome, not an error.
+const MISS = /found nothing|nothing while|better luck next time|no luck this time/i;
+
+// A numbered list line, in either of the two ways the number is bolded:
+//   "**1 <:Frog:123> Frog**"   number and name share the bold
+//   "**1** <:frog:1> Frog"     only the number is bold
+// The number is a quantity, not part of the name.
+const NUMBERED_PATTERNS = [
+    /\*\*\s*\d+\s*\**\s*(?:<a?:[A-Za-z0-9_]+:\d+>\s*)?([^*\n]+?)\s*\*\*/g,
+    /\*\*\s*\d+\s*\*\*\s*(?:<a?:[A-Za-z0-9_]+:\d+>\s*)?([^\n]+)/g,
+];
 
 // Grammar and the trailing status words are not part of a name.
-const NOT_A_NAME = new Set(['a', 'an', 'the', 'success', 'succes', 'successful']);
+const NOT_A_NAME = new Set(['a', 'an', 'the', 'and', 'or', 'some', 'success', 'succes', 'successful']);
 
 // -- errors ------------------------------------------------------------------
 const FAILURE = /cooldown|you don'?t have|not enough|you can'?t|you need|you'?re too|failed|try again|no luck|you already|nothing to|you have no|are you sure|you must wait|slow down|rate.?limit/i;
@@ -135,19 +148,48 @@ function parseCoins(content) {
     };
 }
 
-// The name that follows the trigger. A bolded name is kept whole, so
+// The name that follows a catch trigger. A bolded name is kept whole, so
 // "**Rusty Old Key**" stays one name; otherwise the first word is taken.
-// Returns null when nothing readable follows, so the catch is still counted.
+// Returns null when nothing readable follows, so the catch still counts.
 function lootName(rest) {
     const strip = (t) => t.replace(/<a?:[A-Za-z0-9_]+:\d+>/g, ' ').replace(/\s+/g, ' ').trim();
     const bold = /\*\*\s*([^*]+?)\s*\*\*/.exec(rest);
     if (bold) {
-        const name = strip(bold[1]);
+        const name = strip(bold[1]).replace(/^\d+\s*/, '');
         if (name && !NOT_A_NAME.has(name.toLowerCase())) return name;
     }
-    const word = /[A-Za-z][\w'-]*/.exec(strip(rest));
-    if (!word) return null;
-    return NOT_A_NAME.has(word[0].toLowerCase()) ? null : word[0];
+    const word = (strip(rest).match(/[A-Za-z][\w'-]*/g) || [])
+        .find((w) => !NOT_A_NAME.has(w.toLowerCase()));
+    return word || null;
+}
+
+// Every name in a reply, from the numbered-list shapes and from prose.
+function lootNames(text) {
+    const names = [];
+    const seen = new Set();
+    const push = (raw) => {
+        const name = String(raw || '').replace(/<a?:[A-Za-z0-9_]+:\d+>/g, ' ').replace(/\s+/g, ' ').trim();
+        if (!name || NOT_A_NAME.has(name.toLowerCase())) return;
+        if (seen.has(name.toLowerCase())) return;
+        seen.add(name.toLowerCase());
+        names.push(name);
+    };
+
+    // The numbered list first: "**1 <:Frog:1> Frog**". One line, one catch.
+    for (const pattern of NUMBERED_PATTERNS) {
+        pattern.lastIndex = 0;
+        for (const match of text.matchAll(pattern)) push(match[1]);
+        if (names.length) return names;
+    }
+
+    // Prose: the name follows the trigger. Take the first trigger occurrence.
+    const at = text.search(CATCH);
+    if (at >= 0) {
+        const after = text.slice(at).replace(CATCH, '');
+        const name = lootName(after);
+        if (name) push(name);
+    }
+    return names;
 }
 
 // Returns { animals, items, missed } from one of the reply texts. `kind` is
@@ -156,17 +198,32 @@ function parseLoot(content, kind) {
     const text = String(content || '');
     if (MISS.test(text)) return { animals: [], items: [], missed: true };
 
-    const hunt = HUNT_HIT.exec(text);
-    const dig = hunt ? null : DIG_HIT.exec(text);
-    const hit = hunt || dig;
-    if (!hit) return { animals: [], items: [], missed: false };
+    if (!isCatch(text)) return { animals: [], items: [], missed: false };
 
-    const name = lootName(text.slice(hit.index + hit[0].length)) || 'Unknown';
-    const animal = kind === 'hunt' || (kind !== 'dig' && !!hunt);
+    const names = lootNames(text);
+    if (!names.length) {
+        // The catch is real but prints no readable name. Count it anyway, so a
+        // reply that shows only an emoji is not lost.
+        names.push('Unknown');
+    }
+    const animal = kind === 'hunt' || (kind !== 'dig' && /hunt|caught/i.test(text));
 
     return animal
-        ? { animals: [name], items: [], missed: false }
-        : { animals: [], items: [name], missed: false };
+        ? { animals: names, items: [], missed: false }
+        : { animals: [], items: names, missed: false };
+}
+
+// True when the reply reports a catch in any shape, for the reader's
+// "is this a result" check.
+function isCatch(text) {
+    const t = String(text || '');
+    if (MISS.test(t)) return false;
+    if (CATCH.test(t)) return true;
+    for (const pattern of NUMBERED_PATTERNS) {
+        pattern.lastIndex = 0;
+        if (pattern.test(t)) return true;
+    }
+    return false;
 }
 
 module.exports = {
@@ -181,6 +238,6 @@ module.exports = {
     COIN_MARKER,
     BANK_MARKER,
     MISS,
-    HUNT_HIT,
-    DIG_HIT,
+    CATCH,
+    isCatch,
 };

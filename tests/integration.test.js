@@ -246,3 +246,68 @@ test('the seeded accounts from FARM_ACCOUNTS end up farmable', () => {
 test('the data directory the tests used is a throwaway', () => {
     assert.ok(dir.includes('dankfarm-test-'));
 });
+
+// The exact replies the original bot counted, through the real handler. These
+// are the shapes that produced non-zero stats in storage/stats.json before the
+// parser was narrowed, so they must keep working.
+test('a numbered-list reply from the bot is counted', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('n1', 'pls hunt');
+    client.emit('messageCreate', {
+        author: { id: DANK, bot: true },
+        channel: { id: CHANNEL },
+        content: '',
+        embeds: [{ description: '**1 <:Frog:123> Frog**' }],
+        reference: { messageId: 'n1' },
+    });
+    return new Promise((resolve) => setImmediate(() => {
+        const entry = store.loadStats().stats[token];
+        assert.strictEqual(entry.animals, 1);
+        assert.strictEqual(entry.catches, 1);
+        resolve();
+    }));
+});
+
+test('a prose hunt, a prose dig and a miss are each counted', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    const emit = (key, text, replyTo) => {
+        acct.pending.set(key, key.startsWith('h') ? 'pls hunt' : 'pls dig');
+        client.emit('messageCreate', {
+            author: { id: DANK, bot: true },
+            channel: { id: CHANNEL },
+            content: text,
+            embeds: [],
+            reference: { messageId: key },
+        });
+    };
+    emit('h1', 'You went hunting and brought back a **Frog**', 'h1');
+    return new Promise((resolve) => setImmediate(() => {
+        emit('d1', 'You dug in the dirt and brought back a **Rock**', 'd1');
+        setImmediate(() => {
+            emit('d2', 'You found nothing while digging', 'd2');
+            setImmediate(() => {
+                const entry = store.loadStats().stats[token];
+                assert.strictEqual(entry.animals, 1);
+                assert.strictEqual(entry.items, 1);
+                assert.strictEqual(entry.catches, 2);
+                assert.strictEqual(entry.misses, 1);
+                resolve();
+            });
+        });
+    }));
+});
+
+test('a Dank Memer reply in another channel is recorded, not counted', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('keep', 'pls hunt');
+    client.emit('messageCreate', message('You went hunting and brought back a **Frog**', { replyTo: 'keep', channelId: '999999999999999999' }));
+    return new Promise((resolve) => setImmediate(() => {
+        assert.strictEqual(acct.pending.has('keep'), true, 'the slot is untouched');
+        const seen = grinder.foreignChannels().map((c) => c.channelId);
+        assert.ok(seen.includes('999999999999999999'), 'the other channel is noted for /debug');
+        resolve();
+    }));
+});

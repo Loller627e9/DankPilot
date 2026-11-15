@@ -6,6 +6,7 @@ const store = require('./store');
 const grinder = require('./grinder');
 const handlers = require('./handlers');
 const health = require('./health');
+const reader = require('./reader');
 const panel = require('./panel');
 
 async function main() {
@@ -118,7 +119,17 @@ async function main() {
 
     // Bound before the gateway login: hosts that probe for an open port kill
     // the service if nothing is listening soon after boot.
-    health.startHealthServer(() => grinder.runningTokens().size);
+    // /debug returns the raw inbound messages and the current stats, so the
+    // real reply format is readable from the host. Guarded by DEBUG_KEY.
+    health.startHealthServer(() => grinder.runningTokens().size, (limit) => ({
+        ok: true,
+        accounts: grinder.accountStatus(),
+        stats: grinder.snapshot(),
+        // Non-configured channels where Dank Memer was seen replying. A wrong
+        // channel id shows up here instead of looking like silence.
+        foreignChannels: grinder.foreignChannels(),
+        inbound: reader.recent(limit),
+    }));
     health.startSelfPing();
 
     try {

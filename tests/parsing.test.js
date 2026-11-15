@@ -146,3 +146,44 @@ test('toInt strips separators and tolerates junk', () => {
     assert.strictEqual(P.toInt('abc'), 0);
     assert.strictEqual(P.toInt(undefined), 0);
 });
+
+// --- the numbered-list shape ------------------------------------------------
+// The bot has worded a result as a numbered list, which the earlier parser
+// matched but the trigger-only parser dropped. Both shapes must read.
+
+test('a numbered line with an emoji counts the name', () => {
+    assert.deepStrictEqual(P.parseLoot('**1 <:Frog:123> Frog**', 'hunt').animals, ['Frog']);
+    assert.deepStrictEqual(P.parseLoot('**1 <a:Frog:123> Frog**', 'hunt').animals, ['Frog']);
+});
+
+test('a numbered line without an emoji counts the name', () => {
+    assert.deepStrictEqual(P.parseLoot('**1 Frog**', 'hunt').animals, ['Frog']);
+});
+
+test('a numbered line with only the number bolded counts the name', () => {
+    assert.deepStrictEqual(P.parseLoot('**1** <:frog:1> Frog', 'hunt').animals, ['Frog']);
+});
+
+test('every numbered line is counted', () => {
+    const text = '**1 <:Frog:1> Frog**\n**2 <:Rock:2> Rock**\n**3 <:Fish:3> Fish**';
+    assert.deepStrictEqual(P.parseLoot(text, 'hunt').animals, ['Frog', 'Rock', 'Fish']);
+});
+
+test('a numbered dig line is an item', () => {
+    assert.deepStrictEqual(P.parseLoot('**1 <:Rock:2> Rock**', 'dig').items, ['Rock']);
+});
+
+test('isCatch is true for every hit shape and false for a miss', () => {
+    assert.strictEqual(P.isCatch('**1 <:Frog:1> Frog**'), true);
+    assert.strictEqual(P.isCatch('You caught a **Rock**'), true);
+    assert.strictEqual(P.isCatch('You went hunting and brought back a **Frog**'), true);
+    assert.strictEqual(P.isCatch('You found nothing while digging'), false);
+    assert.strictEqual(P.isCatch('Good morning everyone'), false);
+});
+
+// --- other wordings ---------------------------------------------------------
+
+test('other ways of reporting a catch still count', () => {
+    assert.deepStrictEqual(P.parseLoot('You caught a **Rock**', 'dig').items, ['Rock']);
+    assert.deepStrictEqual(P.parseLoot('You found a Rock', 'dig').items, ['Rock']);
+});

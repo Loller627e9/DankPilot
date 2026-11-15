@@ -6,18 +6,37 @@
 const http = require('http');
 
 // `countRunning` is injected so this module has no dependency on the grinder.
-function startHealthServer(countRunning = () => 0) {
+// `debugSource` returns the raw inbound snapshots for the /debug route.
+function startHealthServer(countRunning = () => 0, debugSource = null) {
     const port = Number(process.env.PORT);
     if (!Number.isFinite(port) || port <= 0) return null;
 
     const server = http.createServer((req, res) => {
-        if (req.url === '/health' || req.url === '/') {
+        const url = new URL(req.url, 'http://localhost');
+        if (url.pathname === '/health' || url.pathname === '/') {
             let running = 0;
             try { running = countRunning(); } catch { /* report 0 rather than fail */ }
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true, uptime: Math.round(process.uptime()), running }));
             return;
         }
+
+        // Raw inbound messages, so the exact reply bytes are readable from the
+        // host without shell access. Guarded by DEBUG_KEY when one is set.
+        if (url.pathname === '/debug' && debugSource) {
+            const key = process.env.DEBUG_KEY;
+            if (key && url.searchParams.get('key') !== key) {
+                res.writeHead(403, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ ok: false, error: 'forbidden' }));
+                return;
+            }
+            let payload = {};
+            try { payload = debugSource(Number(url.searchParams.get('limit')) || 20); } catch { /* empty */ }
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(payload, null, 2));
+            return;
+        }
+
         res.writeHead(404, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ ok: false }));
     });

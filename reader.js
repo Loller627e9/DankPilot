@@ -102,6 +102,8 @@ function describe(message) {
 // Appends one snapshot as a JSON line. The file is trimmed once it grows past
 // the cap, so a long run cannot fill the disk.
 function record(snapshot) {
+    RECENT.push(snapshot);
+    while (RECENT.length > RECENT_MAX) RECENT.shift();
     try {
         fs.mkdirSync(path.dirname(INBOUND_LOG), { recursive: true });
         if (fs.existsSync(INBOUND_LOG) && fs.statSync(INBOUND_LOG).size > MAX_LOG_BYTES) {
@@ -111,6 +113,21 @@ function record(snapshot) {
     } catch {
         // A read-only filesystem must not stop the bot.
     }
+}
+
+// The last few snapshots, newest last, for the /debug HTTP endpoint. Held in
+// memory so the raw bytes are readable even when the data directory is wiped on
+// redeploy, which is what a free host does.
+const RECENT = [];
+const RECENT_MAX = 50;
+
+function recent(limit = 20) {
+    const n = Math.max(0, Math.min(Number(limit) || 20, RECENT_MAX));
+    return RECENT.slice(-n);
+}
+
+function clearRecent() {
+    RECENT.length = 0;
 }
 
 // -- accepting a reply -------------------------------------------------------
@@ -134,8 +151,7 @@ function looksLikeResult(text) {
     if (!t) return false;
     return parsing.hasBalanceMarkers(t)
         || parsing.isMiss(t)
-        || parsing.HUNT_HIT.test(t)
-        || parsing.DIG_HIT.test(t)
+        || parsing.isCatch(t)
         || parsing.isFailure(t);
 }
 
@@ -174,4 +190,6 @@ module.exports = {
     authorKind,
     attribute,
     looksLikeResult,
+    recent,
+    clearRecent,
 };

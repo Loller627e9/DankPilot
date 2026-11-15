@@ -58,12 +58,14 @@ All commands use the `$` prefix and are owner-only unless granted.
 Each account page shows coins earned, current balance, commands sent, animals
 caught, items dug, hunts/digs that came back empty, hit rate and errors.
 
-Tracking is driven by the reply text, matched to the command that produced it:
+Tracking is driven by the reply text, matched to the command that produced it.
+Both shapes the bot has used are read:
 
 | Reply | Counted as |
 | --- | --- |
 | `You went hunting and brought back a **Frog**` | animal caught |
 | `You dug in the dirt and brought back a **Rock**` | item dug |
+| `**1 <:Frog:123> Frog**` (numbered list) | animal caught |
 | `You found nothing while digging` | a miss, which is how hit rate is computed |
 | `<:Coin:1> 1,850,722` + `<:Bank:2> 0 / 50,000` | balance, and coins earned |
 | `You're on a cooldown, try again in 30 seconds` | an error |
@@ -71,6 +73,21 @@ Tracking is driven by the reply text, matched to the command that produced it:
 Other currencies in the balance reply (gems, fish tokens, skin fragments) are
 recorded too, under **Other**. `pls beg` is not tracked on its own — it only
 adds coins, and the next `pls bal` picks that up.
+
+### When nothing is counted
+
+Every inbound message in the farm channel is recorded, whether or not it is
+understood, so a reply that reads as zero can be inspected instead of guessed
+at. Two ways to look:
+
+- In Discord, run `$debug`. It lists the accounts and the last few inbound
+  messages, with their text and any emoji names.
+- Over HTTP, open `/debug` on the service. It returns the same thing as JSON,
+  including the live stats. Set `DEBUG_KEY` to require `?key=...`, which you
+  should do on a public host.
+
+Each reply also logs one line per match, with the delta it caused, so a read
+that changes nothing is visible as no change rather than silence.
 
 ## Configuration
 
