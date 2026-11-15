@@ -42,6 +42,7 @@ function newAccount() {
         channelId: CHANNEL,
         timer: null,
         pending: new Map(),
+        applied: new Set(),
         lastActivity: Date.now(),
     });
     grinder._bindMessageHandler(token, CHANNEL, client);
@@ -310,4 +311,66 @@ test('a Dank Memer reply in another channel is recorded, not counted', () => {
         assert.ok(seen.includes('999999999999999999'), 'the other channel is noted for /debug');
         resolve();
     }));
+});
+
+test('an edited reply is counted once, not twice', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('e1', 'pls hunt');
+    const msg = {
+        id: 'edit-1',
+        author: { id: DANK, bot: true },
+        channel: { id: CHANNEL },
+        content: '',
+        embeds: [{ description: '**1 <:Frog:1> Frog**' }],
+        reference: { messageId: 'e1' },
+    };
+    client.emit('messageCreate', msg);
+    return new Promise((resolve) => setImmediate(() => {
+        // The same message arrives again as an edit, with the final content.
+        client.emit('messageUpdate', null, msg);
+        setImmediate(() => {
+            const entry = store.loadStats().stats[token];
+            assert.strictEqual(entry.animals, 1, 'counted exactly once');
+            resolve();
+        });
+    }));
+});
+
+test('a result that only arrives on edit is still counted', () => {
+    const { client, token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    acct.pending.set('d9', 'pls dig');
+    // The create carries no result yet; the edit fills it in.
+    client.emit('messageUpdate', null, {
+        id: 'edit-2',
+        author: { id: DANK, bot: true },
+        channel: { id: CHANNEL },
+        content: 'You dug in the dirt and brought back a **Rock**',
+        embeds: [],
+        reference: { messageId: 'd9' },
+    });
+    return new Promise((resolve) => setImmediate(() => {
+        const entry = store.loadStats().stats[token];
+        assert.strictEqual(entry.items, 1);
+        resolve();
+    }));
+});
+
+test('an account that sends but never reads is flagged deaf', async () => {
+    const { token } = newAccount();
+    const acct = grinder._accounts.get(token);
+    // Simulate sends with no readable reply. sendCommand needs a channel, so
+    // count directly the way the send path does.
+    acct.label = 'deaf-test';
+    for (let i = 0; i < 8; i++) acct.sent = (acct.sent || 0) + 1;
+    const status = grinder.accountStatus().find((a) => a.label === 'deaf-test');
+    assert.strictEqual(status.sent, 8);
+    assert.strictEqual(status.read, 0);
+    assert.strictEqual(status.deaf, true, 'eight sends with no reads is the zero-stats failure');
+
+    // One read clears it.
+    acct.read = 1;
+    const after = grinder.accountStatus().find((a) => a.label === 'deaf-test');
+    assert.strictEqual(after.deaf, false);
 });

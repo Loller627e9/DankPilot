@@ -90,6 +90,8 @@ async function sendCommand(token, channelId, command) {
                 acct.pending.delete(acct.pending.keys().next().value);
             }
         }
+        acct.sent = (acct.sent || 0) + 1;
+        warnIfDeaf(acct);
         log(`[${maskToken(token)}] Sent command: ${command}`);
         return true;
     } catch (err) {
@@ -124,7 +126,7 @@ function isActionable(text) {
 }
 
 function bindMessageHandler(token, channelId, client) {
-    client.on('messageCreate', async (message) => {
+    const handle = async (message) => {
         try {
             if (!message || !message.channel) return;
             if (!message.author || message.author.id === (client.user && client.user.id)) return;
@@ -140,6 +142,11 @@ function bindMessageHandler(token, channelId, client) {
             const acct = accounts.get(token);
             if (!acct) return;
 
+            // The same message can arrive once as a create and again on each
+            // edit, so count it only the first time it is understood.
+            if (!acct.applied) acct.applied = new Set();
+            if (message.id && acct.applied.has(message.id)) return;
+
             const snapshot = reader.describe(message);
             reader.record(snapshot);
             log(`[${acct.label}] <- ${reader.authorKind(message)} ref=${snapshot.reference || '-'} ${JSON.stringify(snapshot.text.slice(0, 300))}`);
@@ -147,6 +154,11 @@ function bindMessageHandler(token, channelId, client) {
             const hit = reader.attribute(acct, message);
             if (!hit) return;
 
+            if (message.id) {
+                acct.applied.add(message.id);
+                while (acct.applied.size > 100) acct.applied.delete(acct.applied.values().next().value);
+            }
+            acct.read = (acct.read || 0) + 1;
             acct.pending.delete(hit.key);
             const kind = classifyReply(hit.command, snapshot.text);
             const before = stats.snapshot(token);
@@ -158,7 +170,37 @@ function bindMessageHandler(token, channelId, client) {
             // A handler error must never take the account down.
             log(`Reply handler error (${maskToken(token)}): ${err.message}`);
         }
+    };
+
+    client.on('messageCreate', handle);
+    // A slash-command reply, or a deferred reply that is filled in after the
+    // fact, arrives as an edit rather than a create. Without this the final
+    // result is never read.
+    client.on('messageUpdate', (_old, updated) => {
+        if (updated && typeof updated.fetch === 'function' && (!updated.author || !updated.channel)) {
+            updated.fetch().then(handle).catch(() => { /* gone or not ours */ });
+            return;
+        }
+        handle(updated);
     });
+}
+
+// The exact failure that showed every account as zero: commands go out, no
+// reply is ever understood. After enough sends with nothing read, say so once,
+// loudly, instead of looking like the bot is fine.
+const DEAF_THRESHOLD = 8;
+
+function warnIfDeaf(acct) {
+    if (acct.read > 0 || acct.sent < DEAF_THRESHOLD || acct.warned) return;
+    acct.warned = true;
+    const foreign = foreignChannels();
+    log(
+        `[${acct.label}] WARNING: sent ${acct.sent} commands and read no replies. ` +
+        'The bot is talking but not hearing. Run `$debug` (or open /debug) to see ' +
+        'what is arriving. Check the channel id, and that the account can read ' +
+        'messages in it.' +
+        (foreign.length ? ` Dank Memer was seen in another channel: ${foreign.map(c => c.channelId).join(', ')}` : '')
+    );
 }
 
 // Channels where Dank Memer replied but which are not the configured one, so a
@@ -219,6 +261,9 @@ function accountStatus() {
             label: acct.label,
             ready: !!acct.ready,
             pending: acct.pending.size,
+            sent: acct.sent || 0,
+            read: acct.read || 0,
+            deaf: (acct.sent || 0) >= DEAF_THRESHOLD && !(acct.read > 0),
             idleMs: Date.now() - (acct.lastActivity || 0),
         });
     }
@@ -231,7 +276,7 @@ async function startClient(token, channelId) {
     if (!token || !channelId) return false;
 
     const client = new Client({ checkUpdate: false, readyStatus: false, syncStatus: false });
-    const record = { client, channelId: String(channelId), timer: null, pending: new Map(), lastActivity: Date.now(), ready: false, label: maskToken(token) };
+    const record = { client, channelId: String(channelId), timer: null, pending: new Map(), applied: new Set(), lastActivity: Date.now(), ready: false, label: maskToken(token) };
     accounts.set(token, record);
 
     bindMessageHandler(token, record.channelId, client);

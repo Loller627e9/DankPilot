@@ -68,6 +68,7 @@ Both shapes the bot has used are read:
 | `**1 <:Frog:123> Frog**` (numbered list) | animal caught |
 | `You found nothing while digging` | a miss, which is how hit rate is computed |
 | `<:Coin:1> 1,850,722` + `<:Bank:2> 0 / 50,000` | balance, and coins earned |
+| `⏣ 1,850,722` + `<:Bank:2> 0 / 50,000` | the same, if the emoji is missing |
 | `You're on a cooldown, try again in 30 seconds` | an error |
 
 Other currencies in the balance reply (gems, fish tokens, skin fragments) are
@@ -86,8 +87,25 @@ at. Two ways to look:
   including the live stats. Set `DEBUG_KEY` to require `?key=...`, which you
   should do on a public host.
 
+A reply that arrives as an *edit* — a deferred slash-command reply, or one that
+is filled in after the fact — is read too, and counted once however many times
+it is edited.
+
 Each reply also logs one line per match, with the delta it caused, so a read
 that changes nothing is visible as no change rather than silence.
+
+If commands are being sent but no reply is ever understood, the log says so
+directly after a few sends:
+
+```
+[tok] WARNING: sent 8 commands and read no replies. The bot is talking but not
+hearing. Run `$debug` ... Check the channel id, and that the account can read
+messages in it.
+```
+
+The panel and `$debug` show the same as `sent N/read N`, with the alarm when
+the count is one-sided. That is the exact shape of the "everything is zero"
+problem, so it is loud now instead of silent.
 
 ## Configuration
 

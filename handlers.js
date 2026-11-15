@@ -151,7 +151,9 @@ async function handleCommand(message) {
                 const lines = [];
                 lines.push('**Accounts**');
                 for (const a of grinder.accountStatus()) {
-                    lines.push(`• ${a.label} — ${a.ready ? 'ready' : 'not ready'}, pending ${a.pending}, idle ${Math.round(a.idleMs / 1000)}s`);
+                    const state = a.ready ? 'ready' : 'not ready';
+                    const alarm = a.deaf ? ' ⚠️ TALKING BUT NOT HEARING (sent ' + a.sent + ', read 0)' : ` sent ${a.sent}/read ${a.read}`;
+                    lines.push(`• ${a.label} — ${state}, pending ${a.pending}, idle ${Math.round(a.idleMs / 1000)}s,${alarm}`);
                 }
                 const wrong = grinder.foreignChannels();
                 if (wrong.length) {

@@ -27,6 +27,8 @@ const BANK_LABEL = /\bbank\b\s*:?\s*\**\s*([\d,]+)/i;
 // Unicode fallbacks.
 const COIN_UNICODE = /\u{1F4B0}\s*\**\s*([\d,]+)/u;
 const BANK_UNICODE = /\u{1F3E6}\s*\**\s*([\d,]+)/u;
+// The benzene-ring currency symbol the bot prints in plain text, "⏣ 1,850,722".
+const COIN_SYMBOL = /\u{23E3}\s*\**\s*([\d,]+)/u;
 
 // Other currencies that ride along in the same balance reply, e.g.
 // "<:SkinFragments:3> 0", "<:FishToken:4> 0", "<:GemsAnimated:5> 0".
@@ -101,7 +103,9 @@ function isMiss(text) {
 
 function hasBalanceMarkers(text) {
     const s = String(text || '');
-    const coin = COIN_MARKER.test(s) || COIN_LABEL.test(s) || COIN_UNICODE.test(s);
+    // Both sides are required, matching the balance reply the original bot
+    // read. A lone amount, from /beg or elsewhere, is not a balance.
+    const coin = COIN_MARKER.test(s) || COIN_LABEL.test(s) || COIN_UNICODE.test(s) || COIN_SYMBOL.test(s);
     const bank = BANK_MARKER.test(s) || BANK_LABEL.test(s) || BANK_UNICODE.test(s);
     return coin && bank;
 }
@@ -125,7 +129,11 @@ function normalizeExtra(name) {
 // stops at the first number, so only the balance is taken.
 function parseBalance(content) {
     const text = String(content || '');
-    const result = { wallet: 0, bank: 0, extras: {} };
+    // Start from the non-emoji fallbacks, so a plain "\u{23E3} 1,850,722" or a
+    // "Wallet: 1,850,722" line is read even when the custom emoji is absent.
+    // The custom-emoji entries below then override these.
+    const fallback = parseCoins(text);
+    const result = { wallet: fallback.wallet, bank: fallback.bank, extras: {} };
     for (const match of text.matchAll(BALANCE_ENTRY)) {
         const name = String(match[1]).toLowerCase();
         const value = toInt(match[2]);
@@ -143,7 +151,7 @@ function parseBalance(content) {
 function parseCoins(content) {
     const text = String(content || '');
     return {
-        wallet: firstAmount([COIN_AMOUNT, COIN_LABEL, COIN_UNICODE], text),
+        wallet: firstAmount([COIN_AMOUNT, COIN_LABEL, COIN_UNICODE, COIN_SYMBOL], text),
         bank: firstAmount([BANK_AMOUNT, BANK_LABEL, BANK_UNICODE], text),
     };
 }
@@ -237,6 +245,7 @@ module.exports = {
     toInt,
     COIN_MARKER,
     BANK_MARKER,
+    COIN_SYMBOL,
     MISS,
     CATCH,
     isCatch,

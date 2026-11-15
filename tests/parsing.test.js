@@ -125,6 +125,23 @@ test('both markers are needed before a balance is read', () => {
     assert.strictEqual(P.hasBalanceMarkers('<:Coin:1> 1,850,722'), false);
 });
 
+test('the benzene-ring symbol is a balance marker', () => {
+    assert.strictEqual(P.hasBalanceMarkers('⏣ 1,850,722 <:Bank:2> 0'), true);
+    assert.strictEqual(P.parseCoins('⏣ 1,850,722').wallet, 1850722);
+    // A lone amount, from /beg, is not a balance.
+    assert.strictEqual(P.hasBalanceMarkers('Oh you poor soul, take ⏣ 12,345'), false);
+});
+
+test('parseBalance reads the symbol and label fallbacks too', () => {
+    assert.deepStrictEqual(
+        { w: P.parseBalance('⏣ 2,000,000 <:Bank:2> 1,000,000').wallet, b: P.parseBalance('⏣ 2,000,000 <:Bank:2> 1,000,000').bank },
+        { w: 2000000, b: 1000000 }
+    );
+    assert.strictEqual(P.parseBalance('Wallet: 1,850,722 Bank: 5,000').wallet, 1850722);
+    // A custom-emoji entry still wins when both are present.
+    assert.strictEqual(P.parseBalance('<:Coin:1> 99').wallet, 99);
+});
+
 // --- text flattening --------------------------------------------------------
 
 test('embeds are flattened, since results live there', () => {
